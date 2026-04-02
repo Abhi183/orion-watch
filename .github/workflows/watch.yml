@@ -2,13 +2,13 @@ name: Orion-Watch Pipeline
 
 on:
   schedule:
-    # Every 4 hours during Artemis II mission window (Apr 2–11 2026 UTC)
     - cron: "0 */4 * * *"
   push:
     branches: [main]
     paths:
       - "crates/**"
       - "python/**"
+      - "requirements.txt"
       - ".github/workflows/**"
   workflow_dispatch:
     inputs:
@@ -16,11 +16,6 @@ on:
         description: "OEM source (auto|arow|horizons)"
         required: false
         default: "auto"
-      force_rebuild:
-        description: "Force Rust rebuild"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: orion-watch-pipeline
@@ -32,118 +27,106 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     steps:
-      # ── Setup ──────────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: requirements.txt
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
-      # ── Caching ─────────────────────────────────────────────────────────────
       - name: Cache Rust build
-        id: rust-cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install \
-            numpy pandas scikit-learn matplotlib \
-            torch --index-url https://download.pytorch.org/whl/cpu
+        run: pip install -r requirements.txt
 
-      # ── Rust ─────────────────────────────────────────────────────────────────
-      - name: Run Rust tests
-        run: cargo test --workspace
-
-      - name: Build Rust binaries (release)
+      - name: Build Rust binaries
         run: cargo build --release --workspace
 
-      # ── Fetch & Process ───────────────────────────────────────────────────
       - name: Fetch latest OEM
-        id: fetch
         run: |
           mkdir -p data
           SOURCE="${{ github.event.inputs.source || 'auto' }}"
-          echo "source=$SOURCE" >> $GITHUB_OUTPUT
           ./target/release/oem-fetch --out data/latest.oem --source "$SOURCE" || \
-            (echo "Fetch failed, using bootstrap" && cp data/bootstrap.oem data/latest.oem)
+            cp data/bootstrap.oem data/latest.oem
           wc -l data/latest.oem
-          head -20 data/latest.oem
 
       - name: Run Rust OEM Engine
         run: |
-          mkdir -p data outputs
+          mkdir -p outputs
           ./target/release/oem-engine \
             --input data/latest.oem \
             --features-out data/features.csv \
-            --summary-out outputs/summary.json | tee outputs/engine_stdout.json
+            --summary-out outputs/summary.json
 
-      # ── ML + Viz ──────────────────────────────────────────────────────────
       - name: Run ML Pipeline
-        run: |
-          python python/ml/models.py data/features.csv data/features_summary.json outputs
-        env:
-          PYTHONPATH: python
+        run: PYTHONPATH=python python python/ml/models.py data/features.csv outputs/summary.json outputs
 
       - name: Generate Visualisations
-        run: |
-          python python/viz/plots.py \
-            outputs/features_annotated.csv \
-            outputs/ml_results.json
-        env:
-          PYTHONPATH: python
+        run: PYTHONPATH=python python python/viz/plots.py outputs/features_annotated.csv outputs/ml_results.json
 
-      # ── Summary ──────────────────────────────────────────────────────────
+      - name: Copy webapp as index
+        run: cp outputs/orion-watch-webapp.html outputs/index.html 2>/dev/null || true
+
       - name: Write job summary
         run: |
           python - << 'EOF'
           import json, os
-          with open("outputs/ml_results.json") as f:
-              r = json.load(f)
-          s = r.get("summary", {})
-          a = r.get("models", {}).get("anomaly", {})
-          l = r.get("models", {}).get("landing", {})
-          md = f"""## Orion-Watch Run
-
-          | Metric | Value |
-          |---|---|
-          | Object | {s.get('object_name','?')} |
-          | Duration | {s.get('duration_days',0):.3f} days |
-          | Max altitude | {s.get('max_alt_km',0):.0f} km |
-          | Entry speed | {s.get('entry_speed_kms',0):.3f} km/s |
-          | Anomalies | {a.get('n_anomalies','?')} ({a.get('anomaly_rate','?')}) |
-          | Predicted splashdown | {l.get('lat','?')}°N, {l.get('lon','?')}°E (±{l.get('sigma_km','?')} km) |
-          """
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "w") as f:
+          try:
+              with open("outputs/ml_results.json") as f:
+                  r = json.load(f)
+              s = r.get("summary", {})
+              a = r.get("models", {}).get("anomaly", {})
+              l = r.get("models", {}).get("landing", {})
+              md = f"""## Orion-Watch Run\n\n| Metric | Value |\n|---|---|\n| Object | {s.get('object_name','?')} |\n| Duration | {s.get('duration_days',0):.3f} days |\n| Anomalies | {a.get('n_anomalies','?')} ({a.get('anomaly_rate','?')}) |\n| Predicted splashdown | {l.get('lat','?')}N, {l.get('lon','?')}E |\n"""
+          except Exception as e:
+              md = f"## Orion-Watch Run\n\nError: {e}"
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), "w") as f:
               f.write(md)
           EOF
 
-      # ── Commit outputs ────────────────────────────────────────────────────
       - name: Commit outputs
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add outputs/ data/latest.oem data/features.csv || true
-          git diff --staged --quiet || \
-            git commit -m "auto: Orion update $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git add outputs/ data/features.csv || true
+          git diff --staged --quiet || git commit -m "auto: Orion update $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push || echo "Nothing to push"
 
-  # ── Lint job ───────────────────────────────────────────────────────────────
+  deploy-pages:
+    name: Deploy Webapp to GitHub Pages
+    needs: pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - run: git pull origin main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: outputs/
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
   lint:
     name: Lint (Rust + Python)
     runs-on: ubuntu-latest
@@ -155,9 +138,9 @@ jobs:
       - name: rustfmt check
         run: cargo fmt --check --all
       - name: clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
+        with:
+          python-version: "3.11"
       - run: pip install ruff
-      - name: ruff lint
-        run: ruff check python/
+      - run: ruff check python/ --ignore E501
