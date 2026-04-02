@@ -108,7 +108,7 @@ class AnomalyDetector:
         labels = self._model.predict(X_norm)
         scores = self._model.decision_function(X_norm)  # higher = more normal
         # Normalise to [0,1] where 1 = most anomalous
-        scores_norm = 1.0 - (scores - scores.min()) / (scores.ptp() + 1e-9)
+        scores_norm = 1.0 - (scores - scores.min()) / (np.ptp(scores) + 1e-9)
 
         result["anomaly_if"]       = labels == -1
         result["anomaly_score_if"] = scores_norm

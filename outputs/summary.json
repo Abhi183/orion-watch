@@ -1,0 +1,16 @@
+{
+  "object_name": "EM2",
+  "originator": "NASA/JSC/FOD/FDO",
+  "start_time": "2026-04-02T03:26:56.675",
+  "stop_time": "2026-04-10T23:53:30.512",
+  "n_vectors": 3193,
+  "duration_days": 8.851770833333333,
+  "max_dist_km": 413147.61730456015,
+  "max_alt_km": 406776.61730456015,
+  "apoapsis_epoch": "2026-04-06T23:07:38.660",
+  "min_speed_kms": 0.41395046414213643,
+  "entry_speed_kms": 10.998843529678863,
+  "n_anomalies": 0,
+  "mean_energy": -1.2513624984310912,
+  "energy_std": 1.161939925815111
+}

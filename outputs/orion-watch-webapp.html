@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Orion Watch — Artemis II ML Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
+
+:root {
+  --bg:     #06060f;
+  --bg2:    #0b0b1a;
+  --bg3:    #0f0f22;
+  --border: #1a1a35;
+  --gold:   #f5c842;
+  --cyan:   #00e5ff;
+  --pink:   #ff3d8b;
+  --green:  #00ffaa;
+  --dim:    #5a5a8a;
+  --text:   #c8d0f0;
+  --white:  #eef2ff;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:'Space Mono',monospace; }
+
+/* ── Layout ── */
+#app { display:grid; grid-template-rows:52px 1fr; height:100vh; }
+
+/* ── Header ── */
+header {
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:24px; padding:0 24px;
+  position:relative; z-index:10;
+}
+header .logo { font-family:'Syne',sans-serif; font-weight:800; font-size:1.1rem; color:var(--gold); letter-spacing:.08em; white-space:nowrap; }
+header .sub  { font-size:.68rem; color:var(--dim); letter-spacing:.06em; }
+.pill { display:inline-flex; align-items:center; gap:6px; background:var(--bg3); border:1px solid var(--border); border-radius:20px; padding:3px 12px; font-size:.65rem; letter-spacing:.06em; color:var(--dim); }
+.pill.live { border-color:#2a4a2a; color:var(--green); }
+.pill.live::before { content:''; width:6px; height:6px; background:var(--green); border-radius:50%; animation:pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.header-stats { display:flex; gap:16px; margin-left:auto; }
+.hstat { text-align:right; }
+.hstat .v { font-size:.82rem; font-weight:700; color:var(--cyan); }
+.hstat .l { font-size:.58rem; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+nav { display:flex; gap:2px; margin-left:8px; }
+nav button { background:none; border:1px solid transparent; color:var(--dim); font-family:'Space Mono',monospace; font-size:.65rem; padding:4px 10px; border-radius:4px; cursor:pointer; letter-spacing:.06em; text-transform:uppercase; transition:.15s; }
+nav button:hover  { border-color:var(--border); color:var(--text); }
+nav button.active { border-color:var(--gold); color:var(--gold); }
+
+/* ── Main canvas area ── */
+#main { display:grid; grid-template-columns:1fr 300px; overflow:hidden; }
+#canvas-area { position:relative; overflow:hidden; }
+#three-canvas { width:100%; height:100%; display:block; }
+.canvas-label { position:absolute; top:14px; left:18px; font-size:.65rem; color:var(--dim); letter-spacing:.1em; text-transform:uppercase; }
+
+/* ── Right panel ── */
+#panel {
+  background:var(--bg2);
+  border-left:1px solid var(--border);
+  overflow-y:auto; overflow-x:hidden;
+  padding:14px 14px 20px;
+  display:flex; flex-direction:column; gap:12px;
+}
+#panel::-webkit-scrollbar { width:4px; }
+#panel::-webkit-scrollbar-track { background:var(--bg); }
+#panel::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+.card { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:12px; }
+.card h3 { font-size:.6rem; text-transform:uppercase; letter-spacing:.14em; color:var(--gold); margin-bottom:10px; }
+
+/* Stat rows */
+.stat-row { display:flex; justify-content:space-between; align-items:baseline; padding:4px 0; border-bottom:1px solid var(--border); }
+.stat-row:last-child { border-bottom:none; }
+.stat-row .lbl { font-size:.65rem; color:var(--dim); }
+.stat-row .val { font-size:.78rem; font-weight:700; color:var(--cyan); }
+.stat-row .val.gold { color:var(--gold); }
+.stat-row .val.pink { color:var(--pink); }
+.stat-row .val.green { color:var(--green); }
+
+/* Micro charts */
+.mchart { height:52px; background:var(--bg); border:1px solid var(--border); border-radius:4px; overflow:hidden; position:relative; margin-top:6px; }
+.mchart canvas { display:block; }
+.mchart .mchart-label { position:absolute; top:3px; left:6px; font-size:.55rem; color:var(--dim); letter-spacing:.06em; }
+.mchart .mchart-val   { position:absolute; top:3px; right:6px; font-size:.65rem; color:var(--cyan); font-weight:700; }
+
+/* Phase badge */
+.phase-badge { display:inline-block; padding:3px 10px; border-radius:3px; font-size:.65rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+
+/* Anomaly list */
+.anom-item { background:var(--bg); border:1px solid #2a1a2a; border-radius:4px; padding:7px 9px; margin-top:5px; }
+.anom-item .ai-time  { font-size:.65rem; color:var(--pink); font-weight:700; }
+.anom-item .ai-score { font-size:.6rem; color:var(--dim); }
+.anom-item .ai-bar   { height:3px; background:var(--border); border-radius:2px; margin-top:4px; }
+.anom-item .ai-fill  { height:100%; background:var(--pink); border-radius:2px; transition:width .3s; }
+
+/* Landing map */
+#land-map { width:100%; height:100px; background:var(--bg); border:1px solid var(--border); border-radius:4px; position:relative; overflow:hidden; margin-top:6px; }
+#land-map canvas { display:block; }
+
+/* Scrubber */
+#scrub-wrap { position:absolute; bottom:16px; left:20px; right:20px; display:flex; align-items:center; gap:12px; }
+#scrubber { flex:1; -webkit-appearance:none; height:3px; background:var(--border); border-radius:2px; outline:none; cursor:pointer; }
+#scrubber::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--gold); cursor:pointer; }
+#scr-time { font-size:.7rem; color:var(--gold); min-width:72px; text-align:right; }
+#play-btn { background:none; border:1px solid var(--border); color:var(--text); font-family:'Space Mono',monospace; font-size:.65rem; padding:4px 10px; border-radius:4px; cursor:pointer; }
+#play-btn:hover { border-color:var(--gold); color:var(--gold); }
+
+/* Tabs for charts */
+.tab-bar { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
+.tab { background:none; border:1px solid var(--border); color:var(--dim); font-family:'Space Mono',monospace; font-size:.58rem; padding:3px 8px; border-radius:3px; cursor:pointer; letter-spacing:.06em; }
+.tab:hover  { color:var(--text); }
+.tab.active { border-color:var(--cyan); color:var(--cyan); }
+
+/* Page views */
+.view { display:none; height:100%; }
+.view.active { display:block; }
+
+/* Charts view */
+#charts-view { overflow-y:auto; padding:16px; display:none; }
+#charts-view.active { display:block; }
+.chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.chart-box { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:12px; }
+.chart-box h4 { font-size:.6rem; text-transform:uppercase; letter-spacing:.12em; color:var(--gold); margin-bottom:8px; }
+.chart-box canvas { width:100%!important; }
+
+/* README view */
+#readme-view { overflow-y:auto; padding:28px 40px; display:none; }
+#readme-view.active { display:block; }
+#readme-view h1 { font-family:'Syne',sans-serif; font-size:2rem; font-weight:800; color:var(--gold); margin-bottom:8px; }
+#readme-view h2 { font-family:'Syne',sans-serif; font-size:1.1rem; font-weight:700; color:var(--cyan); margin:24px 0 8px; }
+#readme-view p,#readme-view li { font-size:.82rem; line-height:1.9; color:var(--text); }
+#readme-view ul { padding-left:20px; margin:6px 0; }
+#readme-view pre { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:14px; font-size:.72rem; overflow-x:auto; margin:10px 0; }
+#readme-view code { background:var(--bg3); padding:1px 6px; border-radius:3px; font-size:.8em; color:var(--cyan); }
+#readme-view table { border-collapse:collapse; width:100%; margin:10px 0; font-size:.78rem; }
+#readme-view th { background:var(--bg3); color:var(--gold); padding:6px 12px; text-align:left; border:1px solid var(--border); }
+#readme-view td { padding:5px 12px; border:1px solid var(--border); color:var(--text); }
+#readme-view .tag { display:inline-block; background:var(--bg3); border:1px solid var(--border); padding:2px 8px; border-radius:3px; font-size:.65rem; margin:2px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="app">
+
+<header>
+  <div class="logo">ORION-WATCH</div>
+  <div class="sub">ARTEMIS II · ML PIPELINE</div>
+  <div class="pill live">LIVE DATA</div>
+  <div class="pill">NASA/JSC/FOD/FDO · EME2000</div>
+
+  <div class="header-stats">
+    <div class="hstat"><div class="v" id="h-dist">—</div><div class="l">Dist Earth</div></div>
+    <div class="hstat"><div class="v" id="h-spd">—</div><div class="l">Speed km/s</div></div>
+    <div class="hstat"><div class="v" id="h-day">—</div><div class="l">Day</div></div>
+  </div>
+
+  <nav>
+    <button class="active" onclick="switchView('3d',this)">3D TRAJ</button>
+    <button onclick="switchView('charts',this)">CHARTS</button>
+    <button onclick="switchView('readme',this)">README</button>
+  </nav>
+</header>
+
+<div id="main">
+
+  <!-- ── 3D View ── -->
+  <div id="3d-view" class="view active" style="position:relative">
+    <canvas id="three-canvas"></canvas>
+    <div class="canvas-label">EME2000 · Earth-centered frame · drag to rotate · scroll to zoom</div>
+    <div id="scrub-wrap">
+      <button id="play-btn" onclick="togglePlay()">▶ PLAY</button>
+      <input type="range" id="scrubber" min="0" max="532" value="0" oninput="seek(+this.value)">
+      <span id="scr-time">Day 0.00</span>
+    </div>
+  </div>
+
+  <!-- ── Charts View ── -->
+  <div id="charts-view" class="view">
+    <div class="chart-grid">
+      <div class="chart-box"><h4>Distance from Earth</h4><canvas id="c-dist" height="140"></canvas></div>
+      <div class="chart-box"><h4>Speed</h4><canvas id="c-spd" height="140"></canvas></div>
+      <div class="chart-box"><h4>Anomaly Score (Isolation Forest)</h4><canvas id="c-anom" height="140"></canvas></div>
+      <div class="chart-box"><h4>Speed Residual (TCM signature)</h4><canvas id="c-sr" height="140"></canvas></div>
+      <div class="chart-box"><h4>Orbital Energy</h4><canvas id="c-energy" height="140"></canvas></div>
+      <div class="chart-box"><h4>Eccentricity</h4><canvas id="c-ecc" height="140"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── README View ── -->
+  <div id="readme-view" class="view">
+    <div style="max-width:760px">
+    <h1>Orion-Watch</h1>
+    <p style="color:var(--dim);margin-bottom:16px">Real NASA flight data · Rust physics engine · Python ML pipeline · GitHub Actions auto-deploy</p>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+      <span class="tag">Rust</span><span class="tag">Python</span><span class="tag">Isolation Forest</span>
+      <span class="tag">LSTM</span><span class="tag">Monte Carlo</span><span class="tag">CCSDS OEM</span>
+      <span class="tag">GitHub Actions</span><span class="tag">EME2000</span>
+    </div>
+
+    <h2>What This Is</h2>
+    <p>This project ingests the <strong>actual NASA/JSC Flight Dynamics Operations</strong> OEM ephemeris file from Artemis II — the live state vectors FDO uses in Mission Control — and runs a multi-layer ML pipeline on it.</p>
+    <p style="margin-top:8px">It is not a simulation. The input data is the same CCSDS OEM file served by <code>FDOweb</code> at MCC-H, updated every ~hour during the mission.</p>
+
+    <h2>What the Pipeline Does</h2>
+    <table>
+      <tr><th>Step</th><th>Tool</th><th>What it produces</th></tr>
+      <tr><td>Fetch</td><td>Rust (async reqwest/tokio)</td><td>Latest OEM from NASA AROW or JPL HORIZONS fallback</td></tr>
+      <tr><td>Parse + Features</td><td>Rust (oem-engine)</td><td>28 orbital features per state vector in ~7ms total</td></tr>
+      <tr><td>Anomaly Detection</td><td>Python / sklearn IsolationForest</td><td>Flags TCM burns from jerk + energy residuals</td></tr>
+      <tr><td>Trajectory Forecast</td><td>Python / PyTorch LSTM</td><td>Predicts next 10 state vectors (40 min ahead)</td></tr>
+      <tr><td>Landing Prediction</td><td>Python / GradientBoosting + Monte Carlo</td><td>Splashdown lat/lon ± uncertainty radius</td></tr>
+      <tr><td>Visualize</td><td>Python / matplotlib</td><td>5 publication-quality plots</td></tr>
+      <tr><td>Auto-update</td><td>GitHub Actions (cron every 4h)</td><td>Fetches, runs, commits updated outputs automatically</td></tr>
+    </table>
+
+    <h2>What the ML Found</h2>
+    <p><strong>Anomaly detection</strong> flagged 96 state vectors clustered around <strong>T+20.4 hours</strong>. This is the Outbound Trajectory Correction (OTC-1) maneuver — a small burn done before TLI to fine-tune the trans-lunar trajectory. The model caught it purely from orbital mechanics residuals (energy jump + jerk spike) with zero labeled training data.</p>
+    <p style="margin-top:8px"><strong>Landing prediction:</strong> Monte Carlo ballistic propagation from the EI state vector (speed 10.999 km/s, alt 127 km) places splashdown at approximately <strong>18.4°N, 151.2°W</strong> — north of Hawaii, consistent with Artemis nominal Pacific recovery zone, ±42 km (1σ).</p>
+
+    <h2>Run Locally</h2>
+    <pre># 1. Build Rust binaries
+cargo build --release --workspace
+
+# 2. Install Python deps
+pip install numpy pandas scikit-learn matplotlib torch
+
+# 3. Run full pipeline (fetch → parse → ML → viz)
+python python/pipeline.py --fetch --out outputs
+
+# Or just run the engine on the bundled data
+./target/release/oem-engine --input data/bootstrap.oem --features-out data/features.csv
+
+# Or run ML directly
+python python/ml/models.py data/features.csv outputs/summary.json outputs</pre>
+
+    <h2>Rust Engine Features (per state vector)</h2>
+    <p>The Rust binary parses 3,193 state vectors and computes 28 features in under 7ms:</p>
+    <pre>dist_km, alt_km, speed_kms, energy, h_mag, h_x/y/z,
+ecc, sma_km, inc_deg, visviva_kms,
+speed_residual, energy_residual, fpa_deg,
+accel_mag, jerk_mag, delta_speed, delta_energy, anomaly_score</pre>
+
+    <h2>GitHub Actions</h2>
+    <p>The workflow at <code>.github/workflows/watch.yml</code> runs every 4 hours during the mission window. It fetches the latest OEM, runs the full pipeline, and commits updated <code>outputs/</code> back to the repo automatically. No manual intervention needed.</p>
+
+    <h2>Data Source</h2>
+    <p>Primary: <code>NASA AROW</code> (Artemis Real-time Orbit Website) — public OEM downloads<br>
+    Fallback: <code>JPL HORIZONS REST API</code> — body ID -170 (Artemis II Orion)</p>
+    </div>
+  </div>
+
+  <!-- ── Right Panel (always visible) ── -->
+  <div id="panel">
+
+    <div class="card">
+      <h3>Current State</h3>
+      <div id="phase-wrap" style="margin-bottom:8px"><span class="phase-badge" id="phase-badge" style="background:#1a3050;color:var(--cyan)">TRANS-LUNAR COAST</span></div>
+      <div class="stat-row"><span class="lbl">Elapsed</span><span class="val gold" id="p-met">—</span></div>
+      <div class="stat-row"><span class="lbl">Distance</span><span class="val" id="p-dist">—</span></div>
+      <div class="stat-row"><span class="lbl">Speed</span><span class="val" id="p-spd">—</span></div>
+      <div class="stat-row"><span class="lbl">Energy</span><span class="val" id="p-e">—</span></div>
+      <div class="stat-row"><span class="lbl">Ecc</span><span class="val" id="p-ecc">—</span></div>
+      <div class="stat-row"><span class="lbl">FPA</span><span class="val" id="p-fpa">—</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Anomaly Score</h3>
+      <div class="mchart"><canvas id="mc-anom" width="272" height="52"></canvas><div class="mchart-label">Isolation Forest</div><div class="mchart-val" id="mc-anom-val">—</div></div>
+      <div class="mchart" style="margin-top:6px"><canvas id="mc-jerk" width="272" height="52"></canvas><div class="mchart-label">log Jerk (burn signature)</div><div class="mchart-val" id="mc-jerk-val">—</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Mission Stats</h3>
+      <div class="stat-row"><span class="lbl">Duration</span><span class="val gold">8.85 days</span></div>
+      <div class="stat-row"><span class="lbl">Max altitude</span><span class="val">406,777 km</span></div>
+      <div class="stat-row"><span class="lbl">Apoapsis</span><span class="val">Apr 6 23:07 UTC</span></div>
+      <div class="stat-row"><span class="lbl">Entry speed</span><span class="val pink">11.00 km/s</span></div>
+      <div class="stat-row"><span class="lbl">State vectors</span><span class="val">3,193</span></div>
+    </div>
+
+    <div class="card">
+      <h3>ML — Anomaly Detection</h3>
+      <div class="stat-row"><span class="lbl">Events flagged</span><span class="val pink">96 / 3,193</span></div>
+      <div class="stat-row"><span class="lbl">At mission time</span><span class="val pink">T+20.4 h</span></div>
+      <div class="anom-item">
+        <div class="ai-time">OTC-1 BURN DETECTED</div>
+        <div class="ai-score">Isolation Forest score: 1.000 · Jerk spike + ΔEnergy</div>
+        <div class="ai-bar"><div class="ai-fill" style="width:100%"></div></div>
+      </div>
+      <div class="anom-item">
+        <div class="ai-time">T+20.41h  score 0.987</div>
+        <div class="ai-score">speed_residual anomaly</div>
+        <div class="ai-bar"><div class="ai-fill" style="width:98.7%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>ML — Predicted Splashdown</h3>
+      <div class="stat-row"><span class="lbl">Latitude</span><span class="val green">18.4° N</span></div>
+      <div class="stat-row"><span class="lbl">Longitude</span><span class="val green">151.2° W</span></div>
+      <div class="stat-row"><span class="lbl">1σ radius</span><span class="val">±42 km</span></div>
+      <div class="stat-row"><span class="lbl">Method</span><span class="val" style="font-size:.6rem">MC ballistic (3k samples)</span></div>
+      <div id="land-map"><canvas id="land-canvas" width="272" height="100"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Rust Engine</h3>
+      <div class="stat-row"><span class="lbl">Parse time</span><span class="val green">5.5 ms</span></div>
+      <div class="stat-row"><span class="lbl">Feature time</span><span class="val green">1.3 ms</span></div>
+      <div class="stat-row"><span class="lbl">Features/vector</span><span class="val">28</span></div>
+      <div class="stat-row"><span class="lbl">Total</span><span class="val green">6.8 ms</span></div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+const D = {"traj": {"t": [0.0, 0.0167, 0.0333, 0.05, 0.0667, 0.0833, 0.1, 0.1167, 0.1333, 0.15, 0.1651, 0.1817, 0.1984, 0.2151, 0.2317, 0.2484, 0.2651, 0.2817, 0.2984, 0.3151, 0.3317, 0.3484, 0.3651, 0.3817, 0.3984, 0.4151, 0.4317, 0.4484, 0.4651, 0.4817, 0.4984, 0.5151, 0.5317, 0.5484, 0.5651, 0.5817, 0.5984, 0.6151, 0.6317, 0.6484, 0.6651, 0.6817, 0.6984, 0.7151, 0.7317, 0.7484, 0.7651, 0.7817, 0.7984, 0.8151, 0.8317, 0.8484, 0.8527, 0.8699, 0.8866, 0.9033, 0.9199, 0.9366, 0.9533, 0.9699, 0.9866, 1.0033, 1.0199, 1.0366, 1.0533, 1.0699, 1.0866, 1.1033, 1.1199, 1.1366, 1.1533, 1.1699, 1.1866, 1.2033, 1.2199, 1.2366, 1.2533, 1.2699, 1.2866, 1.3033, 1.3199, 1.3366, 1.3533, 1.3699, 1.3866, 1.4033, 1.4199, 1.4366, 1.4533, 1.4699, 1.4866, 1.5033, 1.5199, 1.5366, 1.5533, 1.5699, 1.5866, 1.6033, 1.6199, 1.6366, 1.6533, 1.6699, 1.6866, 1.7033, 1.7199, 1.7366, 1.7533, 1.7699, 1.7866, 1.8033, 1.8199, 1.8366, 1.8533, 1.8699, 1.8866, 1.9033, 1.9199, 1.9366, 1.9533, 1.9699, 1.9866, 2.0033, 2.0199, 2.0366, 2.0533, 2.0699, 2.0866, 2.1033, 2.1199, 2.1366, 2.1533, 2.1699, 2.1866, 2.2033, 2.2199, 2.2366, 2.2533, 2.2699, 2.2866, 2.3033, 2.3199, 2.3366, 2.3533, 2.3699, 2.3866, 2.4033, 2.4199, 2.4366, 2.4533, 2.4699, 2.4866, 2.5033, 2.5199, 2.5366, 2.5533, 2.5699, 2.5866, 2.6033, 2.6199, 2.6366, 2.6533, 2.6699, 2.6866, 2.7033, 2.7199, 2.7366, 2.7533, 2.7699, 2.7866, 2.8033, 2.8199, 2.8366, 2.8533, 2.8699, 2.8866, 2.9033, 2.9199, 2.9366, 2.9533, 2.9699, 2.9866, 3.0033, 3.0199, 3.0366, 3.0533, 3.0699, 3.0866, 3.1033, 3.1199, 3.1366, 3.1533, 3.1699, 3.1866, 3.2033, 3.2199, 3.2366, 3.2533, 3.2699, 3.2866, 3.3033, 3.3199, 3.3366, 3.3533, 3.3699, 3.3866, 3.4033, 3.4199, 3.4366, 3.4533, 3.4699, 3.4866, 3.5033, 3.5199, 3.5366, 3.5533, 3.5699, 3.5866, 3.6033, 3.6199, 3.6366, 3.6533, 3.6699, 3.6866, 3.7033, 3.7199, 3.7366, 3.7533, 3.7699, 3.7866, 3.8033, 3.8199, 3.8366, 3.8533, 3.8699, 3.8866, 3.9033, 3.9199, 3.9366, 3.9533, 3.9699, 3.9866, 4.0033, 4.0199, 4.0366, 4.0533, 4.0699, 4.0866, 4.1033, 4.1199, 4.1366, 4.1533, 4.1699, 4.1866, 4.2033, 4.2199, 4.2366, 4.2533, 4.2699, 4.2866, 4.3033, 4.3199, 4.3366, 4.3533, 4.3699, 4.3866, 4.4033, 4.4199, 4.4366, 4.4533, 4.4699, 4.4866, 4.5033, 4.5199, 4.5366, 4.5533, 4.5699, 4.5866, 4.6033, 4.6199, 4.6366, 4.6533, 4.6699, 4.6866, 4.7033, 4.7199, 4.7366, 4.7533, 4.7699, 4.7866, 4.8033, 4.8199, 4.8366, 4.8533, 4.8699, 4.8866, 4.9033, 4.9199, 4.9366, 4.9533, 4.9699, 4.9866, 5.0033, 5.0199, 5.0366, 5.0533, 5.0699, 5.0866, 5.1033, 5.1199, 5.1366, 5.1533, 5.1699, 5.1866, 5.2033, 5.2199, 5.2366, 5.2533, 5.2699, 5.2866, 5.3033, 5.3199, 5.3366, 5.3533, 5.3699, 5.3866, 5.4033, 5.4199, 5.4366, 5.4533, 5.4699, 5.4866, 5.5033, 5.5199, 5.5366, 5.5533, 5.5699, 5.5866, 5.6033, 5.6199, 5.6366, 5.6533, 5.6699, 5.6866, 5.7033, 5.7199, 5.7366, 5.7533, 5.7699, 5.7866, 5.8033, 5.8199, 5.8366, 5.8533, 5.8699, 5.8866, 5.9033, 5.9199, 5.9366, 5.9533, 5.9699, 5.9866, 6.0033, 6.0199, 6.0366, 6.0533, 6.0699, 6.0866, 6.1033, 6.1199, 6.1366, 6.1533, 6.1699, 6.1866, 6.2033, 6.2199, 6.2366, 6.2533, 6.2699, 6.2866, 6.3033, 6.3199, 6.3366, 6.3533, 6.3699, 6.3866, 6.4033, 6.4199, 6.4366, 6.4533, 6.4699, 6.4866, 6.5033, 6.5199, 6.5366, 6.5533, 6.5699, 6.5866, 6.6033, 6.6199, 6.6366, 6.6533, 6.6699, 6.6866, 6.7033, 6.7199, 6.7366, 6.7533, 6.7699, 6.7866, 6.8033, 6.8199, 6.8366, 6.8533, 6.8699, 6.8866, 6.9033, 6.9199, 6.9366, 6.9533, 6.9699, 6.9866, 7.0033, 7.0199, 7.0366, 7.0533, 7.0699, 7.0866, 7.1033, 7.1199, 7.1366, 7.1533, 7.1699, 7.1866, 7.2033, 7.2199, 7.2366, 7.2533, 7.2699, 7.2866, 7.3033, 7.3199, 7.3366, 7.3533, 7.3699, 7.3866, 7.4033, 7.4199, 7.4366, 7.4533, 7.4699, 7.4866, 7.5033, 7.5199, 7.5366, 7.5533, 7.5699, 7.5866, 7.6033, 7.6199, 7.6366, 7.6533, 7.6699, 7.6866, 7.7033, 7.7199, 7.7366, 7.7533, 7.7699, 7.7866, 7.8033, 7.8199, 7.8366, 7.8533, 7.8699, 7.8866, 7.9033, 7.9199, 7.9366, 7.9533, 7.9699, 7.9866, 8.0033, 8.0199, 8.0366, 8.0533, 8.0699, 8.0866, 8.1033, 8.1199, 8.1366, 8.1533, 8.1699, 8.1866, 8.2033, 8.2199, 8.2366, 8.2533, 8.2699, 8.2866, 8.3033, 8.3199, 8.3366, 8.3533, 8.3699, 8.3866, 8.4033, 8.4199, 8.4366, 8.4533, 8.4699, 8.4866, 8.5033, 8.5199, 8.5366, 8.5533, 8.5699, 8.5866, 8.6033, 8.6199, 8.6366, 8.6533, 8.6699, 8.6866, 8.7033, 8.7199, 8.7366, 8.7533, 8.7699, 8.7866, 8.8033, 8.8199, 8.8366, 8.8518], "dist": [44206.2, 47582.9, 50685.7, 53542.3, 56174.7, 58600.7, 60835.0, 62889.7, 64775.0, 66499.7, 67926.2, 69364.3, 70660.2, 71818.5, 72843.3, 73737.8, 74504.9, 75147.0, 75665.9, 76063.3, 76340.3, 76497.6, 76534.9, 76449.7, 76245.3, 75921.3, 75476.8, 74910.3, 74220.3, 73404.7, 72460.9, 71385.8, 70176.1, 68827.3, 67334.6, 65692.3, 63893.6, 61930.6, 59794.1, 57473.0, 54954.0, 52221.3, 49255.3, 46031.7, 42519.7, 38679.6, 34458.1, 29782.3, 24549.7, 18619.8, 11911.1, 6584.1, 6921.0, 13967.4, 21406.5, 28162.5, 34353.2, 40104.6, 45506.0, 50620.6, 55494.3, 60161.6, 64649.4, 68978.8, 73166.9, 77227.7, 81173.1, 85013.0, 88755.9, 92409.2, 95979.2, 99471.6, 102891.3, 106242.8, 109530.0, 112756.4, 115925.4, 119039.7, 122102.0, 125114.8, 128080.3, 131000.6, 133877.5, 136712.7, 139507.9, 142264.7, 144984.4, 147668.3, 150317.6, 152933.6, 155517.2, 158069.6, 160591.6, 163084.2, 165548.3, 167984.6, 170393.9, 172776.9, 175134.4, 177466.9, 179775.2, 182059.8, 184321.2, 186560.1, 188776.9, 190972.2, 193146.4, 195300.0, 197433.4, 199547.0, 201641.3, 203716.6, 205773.3, 207811.8, 209832.3, 211835.3, 213821.1, 215789.9, 217742.1, 219678.0, 221597.8, 223501.8, 225390.3, 227263.4, 229121.6, 230965.0, 232793.7, 234608.2, 236408.5, 238194.9, 239967.6, 241726.8, 243472.6, 245205.3, 246925.0, 248632.0, 250326.3, 252008.2, 253677.9, 255335.4, 256980.9, 258614.6, 260236.7, 261847.2, 263446.3, 265034.2, 266611.0, 268176.8, 269731.7, 271275.8, 272809.4, 274332.4, 275845.1, 277347.5, 278839.7, 280321.8, 281794.1, 283256.4, 284709.0, 286152.0, 287585.4, 289009.4, 290424.0, 291829.3, 293225.5, 294612.5, 295990.6, 297359.7, 298719.9, 300071.4, 301414.3, 302748.5, 304074.2, 305391.4, 306700.3, 308000.8, 309293.1, 310577.2, 311853.3, 313121.3, 314381.3, 315633.5, 316877.8, 318114.3, 319343.2, 320564.3, 321777.9, 322984.0, 324182.6, 325373.7, 326557.6, 327734.1, 328903.3, 330065.4, 331220.3, 332368.2, 333509.0, 334642.8, 335769.7, 336889.7, 338002.9, 339109.3, 340208.9, 341301.9, 342388.2, 343467.9, 344541.1, 345607.7, 346667.9, 347721.7, 348769.1, 349810.2, 350844.9, 351873.5, 352895.8, 353912.0, 354922.0, 355926.0, 356923.9, 357915.8, 358901.8, 359881.8, 360856.0, 361824.3, 362786.8, 363743.5, 364694.6, 365639.9, 366579.6, 367513.7, 368442.2, 369365.2, 370282.6, 371194.6, 372101.2, 373002.4, 373898.3, 374788.8, 375674.1, 376554.2, 377429.0, 378298.7, 379163.3, 380022.8, 380877.2, 381726.6, 382571.1, 383410.6, 384245.3, 385075.1, 385900.1, 386720.3, 387535.7, 388346.5, 389152.6, 389954.1, 390751.0, 391543.3, 392331.1, 393114.5, 393893.4, 394667.9, 395438.1, 396203.8, 396965.2, 397722.4, 398475.1, 399223.6, 399967.7, 400707.5, 401442.8, 402173.7, 402899.9, 403621.2, 404337.6, 405048.5, 405753.6, 406452.3, 407143.6, 407826.4, 408498.9, 409158.9, 409803.0, 410426.3, 411022.0, 411580.1, 412086.3, 412521.1, 412859.8, 413075.6, 413147.6, 413069.6, 412853.6, 412523.2, 412105.1, 411622.2, 411092.3, 410527.9, 409938.0, 409328.6, 408704.2, 408067.6, 407421.2, 406766.3, 406104.1, 405435.5, 404760.9, 404080.9, 403395.8, 402705.7, 402010.9, 401311.5, 400607.7, 399899.3, 399186.5, 398469.4, 397747.8, 397021.8, 396291.5, 395556.7, 394817.5, 394073.9, 393325.7, 392573.1, 391815.9, 391054.1, 390287.7, 389516.7, 388741.0, 387960.6, 387175.4, 386385.4, 385590.7, 384791.1, 383986.5, 383177.1, 382362.7, 381543.3, 380718.9, 379889.4, 379054.8, 378215.1, 377370.2, 376520.1, 375664.8, 374804.1, 373938.2, 373066.9, 372190.2, 371308.1, 370420.6, 369527.5, 368629.0, 367724.8, 366815.1, 365899.8, 364978.7, 364052.0, 363119.5, 362181.2, 361237.2, 360287.2, 359331.4, 358369.6, 357401.9, 356428.2, 355448.4, 354462.6, 353470.6, 352472.4, 351468.1, 350457.5, 349440.6, 348417.4, 347387.9, 346351.9, 345309.5, 344260.5, 343205.1, 342143.0, 341074.4, 339999.0, 338917.0, 337828.1, 336732.5, 335630.0, 334520.6, 333404.2, 332280.8, 331150.4, 330012.9, 328868.2, 327716.3, 326557.1, 325390.6, 324216.8, 323035.5, 321846.7, 320650.4, 319446.5, 318234.9, 317015.6, 315788.5, 314553.6, 313310.8, 312060.0, 310801.2, 309534.2, 308259.1, 306975.8, 305684.1, 304384.1, 303075.6, 301758.6, 300433.0, 299098.7, 297755.7, 296403.8, 295043.0, 293673.2, 292294.3, 290906.3, 289509.0, 288102.3, 286686.2, 285260.6, 283825.3, 282380.3, 280925.5, 279460.8, 277986.0, 276501.1, 275006.0, 273500.5, 271984.5, 270458.0, 268920.7, 267372.6, 265813.6, 264243.5, 262662.2, 261069.6, 259465.4, 257849.7, 256222.2, 254582.8, 252931.3, 251267.7, 249591.6, 247903.0, 246201.7, 244487.6, 242760.3, 241019.9, 239266.0, 237498.4, 235717.1, 233921.7, 232112.1, 230288.1, 228449.3, 226595.7, 224726.9, 222842.7, 220942.9, 219027.1, 217095.2, 215146.7, 213181.6, 211199.3, 209199.7, 207182.4, 205147.0, 203093.3, 201020.8, 198929.1, 196818.0, 194686.9, 192535.5, 190363.3, 188169.9, 185954.7, 183717.2, 181457.0, 179173.5, 176866.1, 174534.2, 172177.1, 169794.3, 167384.9, 164948.3, 162483.7, 159990.3, 157467.1, 154913.3, 152328.0, 149709.9, 147058.2, 144371.5, 141648.7, 138888.4, 136089.2, 133249.5, 130367.7, 127442.0, 124470.5, 121451.1, 118381.5, 115259.2, 112081.5, 108845.5, 105547.8, 102184.8, 98752.4, 95246.2, 91660.9, 87990.7, 84229.1, 80368.4, 76399.8, 72312.9, 68095.5, 63732.7, 59206.5, 54494.4, 49567.9, 44390.0, 38910.7, 33060.7, 26740.3, 19809.0, 12175.0, 6497.9], "speed": [2.90387, 2.67445, 2.47528, 2.29954, 2.14246, 2.00064, 1.87161, 1.75349, 1.64491, 1.54483, 1.46107, 1.37527, 1.29636, 1.22415, 1.15859, 1.09979, 1.04794, 1.00336, 0.9664, 0.93747, 0.91695, 0.90514, 0.90757, 0.91393, 0.92908, 0.95278, 0.98469, 1.02443, 1.07163, 1.12593, 1.18708, 1.25493, 1.32942, 1.41066, 1.49891, 1.59459, 1.69834, 1.81104, 1.93386, 2.06841, 2.21679, 2.38187, 2.56761, 2.77959, 3.02599, 3.31935, 3.68011, 4.14434, 4.78345, 5.76407, 7.57282, 10.55986, 10.59781, 7.43948, 5.95873, 5.15475, 4.63358, 4.25935, 3.97274, 3.74335, 3.55382, 3.39341, 3.25507, 3.13394, 3.02657, 2.93041, 2.84353, 2.76444, 2.69198, 2.62522, 2.56339, 2.50588, 2.45218, 2.40184, 2.35451, 2.30988, 2.26768, 2.22767, 2.18967, 2.15349, 2.11898, 2.086, 2.05444, 2.02418, 1.99513, 1.9672, 1.94032, 1.91441, 1.88942, 1.86528, 1.84194, 1.81935, 1.79747, 1.77626, 1.75568, 1.7357, 1.71628, 1.6974, 1.67903, 1.66114, 1.6437, 1.62671, 1.61013, 1.59396, 1.57816, 1.56272, 1.54764, 1.53288, 1.51845, 1.50432, 1.49049, 1.47694, 1.46366, 1.45064, 1.43788, 1.42535, 1.41306, 1.40099, 1.38914, 1.37751, 1.36607, 1.35483, 1.34378, 1.33291, 1.32221, 1.31169, 1.30134, 1.29115, 1.28111, 1.27122, 1.26149, 1.25189, 1.24243, 1.23311, 1.22392, 1.21485, 1.20591, 1.19709, 1.18839, 1.17979, 1.17132, 1.16294, 1.15468, 1.14651, 1.13845, 1.13049, 1.12261, 1.11484, 1.10715, 1.09955, 1.09204, 1.08461, 1.07726, 1.07, 1.06281, 1.0557, 1.04867, 1.04171, 1.03482, 1.028, 1.02125, 1.01457, 1.00795, 1.0014, 0.99491, 0.98849, 0.98212, 0.97582, 0.96957, 0.96338, 0.95724, 0.95116, 0.94514, 0.93917, 0.93325, 0.92738, 0.92156, 0.91579, 0.91006, 0.90439, 0.89876, 0.89318, 0.88764, 0.88214, 0.87669, 0.87128, 0.86592, 0.86059, 0.85531, 0.85006, 0.84485, 0.83968, 0.83455, 0.82946, 0.8244, 0.81938, 0.81439, 0.80944, 0.80452, 0.79964, 0.79478, 0.78996, 0.78518, 0.78042, 0.7757, 0.771, 0.76634, 0.7617, 0.7571, 0.75252, 0.74797, 0.74345, 0.73895, 0.73449, 0.73005, 0.72563, 0.72124, 0.71688, 0.71254, 0.70823, 0.70394, 0.69967, 0.69543, 0.69121, 0.68701, 0.68283, 0.67868, 0.67455, 0.67044, 0.66635, 0.66228, 0.65823, 0.6542, 0.65019, 0.6462, 0.64223, 0.63828, 0.63434, 0.63042, 0.62652, 0.62264, 0.61877, 0.61492, 0.61108, 0.60726, 0.60346, 0.59967, 0.59589, 0.59212, 0.58837, 0.58463, 0.58091, 0.57719, 0.57349, 0.56979, 0.5661, 0.56242, 0.55875, 0.55509, 0.55142, 0.54777, 0.54411, 0.54046, 0.53681, 0.53315, 0.52949, 0.52582, 0.52214, 0.51845, 0.51474, 0.51101, 0.50726, 0.50346, 0.49963, 0.49575, 0.49181, 0.48779, 0.48368, 0.47946, 0.4751, 0.47057, 0.46582, 0.46082, 0.4555, 0.4498, 0.44369, 0.43719, 0.43046, 0.42395, 0.41845, 0.41493, 0.41397, 0.41545, 0.41868, 0.42291, 0.42759, 0.4324, 0.43716, 0.44183, 0.44636, 0.45076, 0.45504, 0.45922, 0.4633, 0.4673, 0.47123, 0.47511, 0.47893, 0.48272, 0.48647, 0.49019, 0.49388, 0.49756, 0.50122, 0.50487, 0.5085, 0.51213, 0.51576, 0.51938, 0.523, 0.52662, 0.53024, 0.53387, 0.53749, 0.54113, 0.54477, 0.54841, 0.55207, 0.55573, 0.5594, 0.56308, 0.56677, 0.57048, 0.57419, 0.57792, 0.58166, 0.58541, 0.58918, 0.59296, 0.59676, 0.60057, 0.60439, 0.60823, 0.61209, 0.61597, 0.61986, 0.62377, 0.62769, 0.63164, 0.6356, 0.63958, 0.64359, 0.64761, 0.65165, 0.65571, 0.65979, 0.66389, 0.66801, 0.67216, 0.67632, 0.68051, 0.68472, 0.68895, 0.69321, 0.69749, 0.7018, 0.70613, 0.71048, 0.71486, 0.71926, 0.72369, 0.72815, 0.73263, 0.73714, 0.74168, 0.74625, 0.75084, 0.75547, 0.76012, 0.7648, 0.76952, 0.77426, 0.77903, 0.78384, 0.78868, 0.79355, 0.79846, 0.8034, 0.80837, 0.81338, 0.81842, 0.8235, 0.82862, 0.83377, 0.83896, 0.84419, 0.84946, 0.85477, 0.86012, 0.86551, 0.87094, 0.87642, 0.88194, 0.8875, 0.89311, 0.89877, 0.90447, 0.91022, 0.91602, 0.92186, 0.92776, 0.93371, 0.93971, 0.94577, 0.95187, 0.95804, 0.96426, 0.97054, 0.97687, 0.98327, 0.98973, 0.99625, 1.00283, 1.00948, 1.0162, 1.02298, 1.02984, 1.03676, 1.04376, 1.05083, 1.05798, 1.0652, 1.0725, 1.07989, 1.08736, 1.09491, 1.10255, 1.11028, 1.1181, 1.12601, 1.13402, 1.14213, 1.15033, 1.15865, 1.16706, 1.17559, 1.18423, 1.19298, 1.20185, 1.21084, 1.21996, 1.2292, 1.23858, 1.24809, 1.25774, 1.26754, 1.27748, 1.28758, 1.29783, 1.30824, 1.31883, 1.32958, 1.34052, 1.35164, 1.36295, 1.37445, 1.38616, 1.39809, 1.41023, 1.42259, 1.4352, 1.44805, 1.46115, 1.47451, 1.48815, 1.50208, 1.5163, 1.53083, 1.54568, 1.56087, 1.57641, 1.59232, 1.60861, 1.6253, 1.64242, 1.65998, 1.678, 1.69651, 1.71554, 1.73511, 1.75525, 1.77599, 1.79737, 1.81943, 1.8422, 1.86574, 1.89009, 1.91531, 1.94145, 1.96858, 1.99677, 2.02611, 2.05667, 2.08856, 2.12189, 2.15677, 2.19336, 2.23181, 2.2723, 2.31504, 2.36025, 2.40823, 2.45928, 2.5138, 2.57222, 2.63508, 2.70303, 2.77685, 2.85753, 2.9463, 3.04473, 3.15485, 3.2794, 3.42208, 3.58816, 3.78534, 4.02551, 4.32823, 4.72852, 5.297, 6.20402, 7.983, 10.99884], "energy": [-4.800617, -4.800633, -4.800647, -4.800661, -4.800675, -4.800691, -4.800707, -4.800724, -4.800742, -4.800761, -4.800778, -4.800797, -4.800817, -4.800837, -4.800857, -4.800877, -4.800896, -4.800915, -4.800934, -4.800952, -4.800969, -4.800985, -4.796243, -4.796258, -4.796271, -4.796283, -4.796294, -4.796304, -4.796312, -4.796319, -4.796324, -4.796327, -4.796329, -4.79633, -4.796328, -4.796325, -4.79632, -4.796312, -4.796303, -4.796291, -4.796277, -4.79626, -4.796239, -4.796215, -4.796184, -4.796144, -4.796087, -4.79599, -4.795776, -4.795078, -4.790978, -4.78442, -1.435881, -0.865055, -0.867369, -0.867839, -0.867964, -0.867991, -0.867981, -0.867955, -0.867921, -0.867883, -0.867842, -0.8678, -0.867757, -0.867714, -0.86767, -0.867627, -0.867583, -0.86754, -0.867497, -0.867454, -0.867411, -0.867368, -0.867326, -0.867284, -0.867243, -0.867202, -0.867161, -0.86712, -0.86708, -0.86704, -0.867, -0.86696, -0.866921, -0.866883, -0.866844, -0.866806, -0.866768, -0.86673, -0.866693, -0.866656, -0.866619, -0.866583, -0.866546, -0.86651, -0.866475, -0.866439, -0.866404, -0.866369, -0.866334, -0.8663, -0.866266, -0.866232, -0.866198, -0.866164, -0.866131, -0.866098, -0.866065, -0.866032, -0.866, -0.865967, -0.865935, -0.865903, -0.865872, -0.86584, -0.865809, -0.865777, -0.865746, -0.865716, -0.865685, -0.865654, -0.865624, -0.865594, -0.865564, -0.865534, -0.865504, -0.865474, -0.865445, -0.865415, -0.865386, -0.865357, -0.865328, -0.865299, -0.86527, -0.865242, -0.865213, -0.865184, -0.865156, -0.865128, -0.8651, -0.865071, -0.865043, -0.865015, -0.864987, -0.86496, -0.864932, -0.864904, -0.864876, -0.864849, -0.864821, -0.864794, -0.864766, -0.864739, -0.864712, -0.864684, -0.864657, -0.86463, -0.864602, -0.864575, -0.864548, -0.864521, -0.864494, -0.864466, -0.864439, -0.864412, -0.864385, -0.864358, -0.864331, -0.864303, -0.864276, -0.864249, -0.864222, -0.864195, -0.864167, -0.86414, -0.864113, -0.864085, -0.864058, -0.86403, -0.864003, -0.863975, -0.863948, -0.86392, -0.863893, -0.863865, -0.863837, -0.863809, -0.863781, -0.863753, -0.863725, -0.863697, -0.863669, -0.863641, -0.863612, -0.863584, -0.863556, -0.863527, -0.863498, -0.86347, -0.863441, -0.863412, -0.863383, -0.863354, -0.863325, -0.863296, -0.863266, -0.863237, -0.863208, -0.863178, -0.863148, -0.863119, -0.863089, -0.863059, -0.863029, -0.862999, -0.862969, -0.862939, -0.862909, -0.862879, -0.862849, -0.862818, -0.862788, -0.862758, -0.862727, -0.862697, -0.862667, -0.862637, -0.862606, -0.862576, -0.862546, -0.862516, -0.862486, -0.862456, -0.862427, -0.862398, -0.862368, -0.862339, -0.862311, -0.862283, -0.862255, -0.862227, -0.8622, -0.862174, -0.862148, -0.862123, -0.862099, -0.862076, -0.862054, -0.862032, -0.862012, -0.861994, -0.861977, -0.861962, -0.861948, -0.861937, -0.861929, -0.861923, -0.86192, -0.861921, -0.861925, -0.861934, -0.861948, -0.861968, -0.861995, -0.862028, -0.862071, -0.862122, -0.862186, -0.862262, -0.862353, -0.862461, -0.862591, -0.862744, -0.862926, -0.863143, -0.8634, -0.863708, -0.864076, -0.864518, -0.865052, -0.865699, -0.866486, -0.867447, -0.868618, -0.870033, -0.871708, -0.873608, -0.875596, -0.877406, -0.878706, -0.879285, -0.879178, -0.878605, -0.877805, -0.876949, -0.87613, -0.875389, -0.874738, -0.874173, -0.873686, -0.873269, -0.87291, -0.872603, -0.872339, -0.872112, -0.871917, -0.871749, -0.871605, -0.871481, -0.871375, -0.871284, -0.871207, -0.871141, -0.871086, -0.87104, -0.871003, -0.870972, -0.870948, -0.87093, -0.870917, -0.870909, -0.870904, -0.870904, -0.870907, -0.870912, -0.870921, -0.870932, -0.870946, -0.870961, -0.870979, -0.870998, -0.871018, -0.87104, -0.871063, -0.871088, -0.871113, -0.87114, -0.871167, -0.871195, -0.871224, -0.871254, -0.871284, -0.871314, -0.871346, -0.871377, -0.871409, -0.871442, -0.871475, -0.871508, -0.871541, -0.871575, -0.871609, -0.871643, -0.871677, -0.871711, -0.871746, -0.87178, -0.871815, -0.87185, -0.871885, -0.87192, -0.871955, -0.87199, -0.872025, -0.87206, -0.872095, -0.87213, -0.872165, -0.8722, -0.872235, -0.87227, -0.872306, -0.87234, -0.872375, -0.87241, -0.872445, -0.87248, -0.872515, -0.87255, -0.872584, -0.872619, -0.872653, -0.872688, -0.872722, -0.872756, -0.872791, -0.872825, -0.872859, -0.872893, -0.872927, -0.872961, -0.872995, -0.873029, -0.873062, -0.873096, -0.873129, -0.873163, -0.873196, -0.87323, -0.873263, -0.873296, -0.873329, -0.873362, -0.873395, -0.873428, -0.873461, -0.873493, -0.873526, -0.873559, -0.873591, -0.873624, -0.873656, -0.873688, -0.873721, -0.873753, -0.873785, -0.873817, -0.873849, -0.873881, -0.873913, -0.873945, -0.873977, -0.874008, -0.87404, -0.874072, -0.874103, -0.874135, -0.874166, -0.874198, -0.874229, -0.87426, -0.874292, -0.874323, -0.874354, -0.874385, -0.874417, -0.874448, -0.874479, -0.87451, -0.874541, -0.874572, -0.874603, -0.874634, -0.874665, -0.874695, -0.874726, -0.874757, -0.874788, -0.874819, -0.874849, -0.87488, -0.874911, -0.874942, -0.874972, -0.875003, -0.875034, -0.875064, -0.875095, -0.875125, -0.875156, -0.875187, -0.875217, -0.875248, -0.875278, -0.875309, -0.87534, -0.87537, -0.875401, -0.875431, -0.875462, -0.875492, -0.875523, -0.875554, -0.875584, -0.875615, -0.875645, -0.875676, -0.875706, -0.875737, -0.875768, -0.875798, -0.875829, -0.875859, -0.87589, -0.87592, -0.875951, -0.875982, -0.876012, -0.876043, -0.876073, -0.876104, -0.876134, -0.876165, -0.876196, -0.876226, -0.876257, -0.876287, -0.876318, -0.876348, -0.876378, -0.876409, -0.876439, -0.876469, -0.8765, -0.87653, -0.87656, -0.87659, -0.87662, -0.87665, -0.87668, -0.87671, -0.876739, -0.876769, -0.876798, -0.876827, -0.876857, -0.876885, -0.876914, -0.876943, -0.876971, -0.877, -0.877028, -0.877056, -0.877084, -0.877113, -0.877143, -0.877174, -0.877209, -0.877245, -0.877199, -0.875027, -0.855483], "ecc": [0.843621, 0.843624, 0.843627, 0.843631, 0.843635, 0.843639, 0.843644, 0.843649, 0.843654, 0.84366, 0.843665, 0.84367, 0.843676, 0.843682, 0.843689, 0.843695, 0.843701, 0.843707, 0.843713, 0.84372, 0.843726, 0.843732, 0.841912, 0.841918, 0.841923, 0.841929, 0.841934, 0.841939, 0.841944, 0.841948, 0.841952, 0.841956, 0.84196, 0.841963, 0.841967, 0.841969, 0.841972, 0.841974, 0.841976, 0.841978, 0.84198, 0.841981, 0.841982, 0.841983, 0.841983, 0.841984, 0.841985, 0.841987, 0.841992, 0.842012, 0.842151, 0.84244, 0.952676, 0.971463, 0.971386, 0.97137, 0.971366, 0.971366, 0.971366, 0.971367, 0.971369, 0.971371, 0.971373, 0.971375, 0.971377, 0.97138, 0.971383, 0.971386, 0.971389, 0.971392, 0.971395, 0.971399, 0.971403, 0.971407, 0.971411, 0.971416, 0.97142, 0.971425, 0.971431, 0.971436, 0.971442, 0.971447, 0.971454, 0.97146, 0.971467, 0.971474, 0.971481, 0.971489, 0.971496, 0.971504, 0.971513, 0.971522, 0.971531, 0.97154, 0.97155, 0.97156, 0.97157, 0.971581, 0.971592, 0.971603, 0.971615, 0.971627, 0.97164, 0.971652, 0.971666, 0.971679, 0.971693, 0.971708, 0.971723, 0.971738, 0.971754, 0.97177, 0.971786, 0.971803, 0.971821, 0.971839, 0.971857, 0.971876, 0.971895, 0.971915, 0.971936, 0.971956, 0.971978, 0.972, 0.972022, 0.972045, 0.972068, 0.972092, 0.972117, 0.972142, 0.972168, 0.972194, 0.972221, 0.972248, 0.972277, 0.972305, 0.972335, 0.972365, 0.972395, 0.972427, 0.972459, 0.972491, 0.972525, 0.972559, 0.972594, 0.97263, 0.972666, 0.972703, 0.972741, 0.97278, 0.972819, 0.97286, 0.972901, 0.972943, 0.972986, 0.97303, 0.973074, 0.97312, 0.973166, 0.973214, 0.973262, 0.973312, 0.973362, 0.973414, 0.973466, 0.97352, 0.973575, 0.97363, 0.973687, 0.973745, 0.973805, 0.973865, 0.973927, 0.97399, 0.974054, 0.97412, 0.974187, 0.974255, 0.974325, 0.974396, 0.974468, 0.974542, 0.974618, 0.974695, 0.974774, 0.974854, 0.974936, 0.97502, 0.975106, 0.975193, 0.975282, 0.975373, 0.975467, 0.975562, 0.975659, 0.975758, 0.975859, 0.975963, 0.976069, 0.976177, 0.976287, 0.9764, 0.976516, 0.976634, 0.976755, 0.976878, 0.977004, 0.977133, 0.977266, 0.977401, 0.977539, 0.977681, 0.977826, 0.977974, 0.978127, 0.978282, 0.978442, 0.978605, 0.978773, 0.978944, 0.97912, 0.979301, 0.979486, 0.979676, 0.97987, 0.98007, 0.980275, 0.980486, 0.980702, 0.980924, 0.981152, 0.981386, 0.981627, 0.981875, 0.982129, 0.982391, 0.982661, 0.982938, 0.983224, 0.983518, 0.98382, 0.984132, 0.984453, 0.984784, 0.985125, 0.985477, 0.98584, 0.986214, 0.9866, 0.986998, 0.987409, 0.987833, 0.988271, 0.988722, 0.989188, 0.989668, 0.990163, 0.990674, 0.991199, 0.99174, 0.992295, 0.992865, 0.993449, 0.994045, 0.994652, 0.995267, 0.995887, 0.996507, 0.99712, 0.997718, 0.998289, 0.998818, 0.999282, 0.999654, 0.999894, 0.999949, 0.999745, 0.999179, 0.998109, 0.996334, 0.993568, 0.989407, 0.983277, 0.97438, 0.961651, 0.943816, 0.919754, 0.889587, 0.856829, 0.830358, 0.821557, 0.834824, 0.862891, 0.894492, 0.922391, 0.944256, 0.960394, 0.971946, 0.980079, 0.985741, 0.989634, 0.992264, 0.993991, 0.995069, 0.995678, 0.995948, 0.995972, 0.995819, 0.995537, 0.995163, 0.994725, 0.994242, 0.99373, 0.993201, 0.992662, 0.99212, 0.991579, 0.991045, 0.990518, 0.99, 0.989495, 0.989001, 0.98852, 0.988051, 0.987597, 0.987155, 0.986727, 0.986311, 0.985908, 0.985518, 0.98514, 0.984773, 0.984418, 0.984074, 0.983741, 0.983418, 0.983106, 0.982803, 0.982509, 0.982224, 0.981948, 0.98168, 0.98142, 0.981168, 0.980924, 0.980687, 0.980456, 0.980233, 0.980015, 0.979804, 0.9796, 0.9794, 0.979207, 0.979019, 0.978836, 0.978658, 0.978485, 0.978317, 0.978153, 0.977993, 0.977838, 0.977687, 0.97754, 0.977397, 0.977258, 0.977122, 0.976989, 0.97686, 0.976735, 0.976612, 0.976493, 0.976376, 0.976263, 0.976152, 0.976044, 0.975939, 0.975836, 0.975736, 0.975638, 0.975542, 0.975449, 0.975358, 0.975269, 0.975182, 0.975098, 0.975015, 0.974934, 0.974856, 0.974779, 0.974704, 0.97463, 0.974558, 0.974488, 0.97442, 0.974353, 0.974288, 0.974224, 0.974161, 0.9741, 0.974041, 0.973982, 0.973926, 0.97387, 0.973816, 0.973762, 0.973711, 0.97366, 0.97361, 0.973562, 0.973514, 0.973468, 0.973423, 0.973378, 0.973335, 0.973293, 0.973251, 0.973211, 0.973171, 0.973133, 0.973095, 0.973058, 0.973022, 0.972987, 0.972952, 0.972919, 0.972886, 0.972854, 0.972822, 0.972792, 0.972762, 0.972732, 0.972704, 0.972676, 0.972648, 0.972622, 0.972596, 0.97257, 0.972545, 0.972521, 0.972497, 0.972474, 0.972452, 0.97243, 0.972408, 0.972387, 0.972367, 0.972347, 0.972327, 0.972308, 0.97229, 0.972272, 0.972254, 0.972237, 0.97222, 0.972204, 0.972188, 0.972172, 0.972157, 0.972142, 0.972128, 0.972114, 0.9721, 0.972087, 0.972074, 0.972062, 0.97205, 0.972038, 0.972026, 0.972015, 0.972004, 0.971994, 0.971983, 0.971973, 0.971964, 0.971954, 0.971945, 0.971936, 0.971928, 0.971919, 0.971911, 0.971904, 0.971896, 0.971889, 0.971882, 0.971875, 0.971868, 0.971862, 0.971856, 0.97185, 0.971844, 0.971839, 0.971833, 0.971828, 0.971823, 0.971818, 0.971814, 0.97181, 0.971805, 0.971801, 0.971797, 0.971794, 0.97179, 0.971787, 0.971783, 0.97178, 0.971777, 0.971774, 0.971772, 0.971769, 0.971767, 0.971764, 0.971762, 0.97176, 0.971758, 0.971756, 0.971754, 0.971753, 0.971751, 0.971749, 0.971748, 0.971747, 0.971745, 0.971744, 0.971743, 0.971742, 0.971741, 0.97174, 0.971739, 0.971738, 0.971736, 0.971737, 0.971805, 0.972443], "h": [69071.5, 69070.9, 69070.1, 69069.3, 69068.3, 69067.4, 69066.3, 69065.2, 69064.0, 69062.7, 69061.6, 69060.3, 69058.9, 69057.6, 69056.2, 69054.8, 69053.4, 69052.0, 69050.6, 69049.2, 69047.9, 69046.6, 69447.4, 69446.1, 69444.9, 69443.8, 69442.6, 69441.6, 69440.6, 69439.6, 69438.7, 69437.9, 69437.2, 69436.5, 69435.8, 69435.3, 69434.8, 69434.4, 69434.1, 69433.8, 69433.6, 69433.5, 69433.4, 69433.4, 69433.5, 69433.6, 69433.9, 69434.2, 69434.7, 69435.7, 69437.6, 69427.0, 71502.1, 71878.6, 71878.5, 71878.2, 71877.9, 71877.6, 71877.3, 71876.8, 71876.3, 71875.6, 71874.8, 71873.8, 71872.6, 71871.2, 71869.6, 71867.8, 71865.8, 71863.6, 71861.1, 71858.3, 71855.3, 71852.1, 71848.5, 71844.7, 71840.6, 71836.2, 71831.5, 71826.5, 71821.2, 71815.5, 71809.5, 71803.2, 71796.5, 71789.5, 71782.1, 71774.3, 71766.2, 71757.7, 71748.8, 71739.4, 71729.7, 71719.6, 71709.1, 71698.1, 71686.8, 71674.9, 71662.6, 71649.9, 71636.7, 71623.1, 71608.9, 71594.3, 71579.2, 71563.6, 71547.5, 71530.8, 71513.7, 71496.0, 71477.7, 71458.9, 71439.6, 71419.7, 71399.2, 71378.1, 71356.4, 71334.1, 71311.2, 71287.7, 71263.5, 71238.7, 71213.3, 71187.1, 71160.3, 71132.8, 71104.7, 71075.7, 71046.1, 71015.7, 70984.6, 70952.8, 70920.1, 70886.7, 70852.4, 70817.4, 70781.5, 70744.8, 70707.2, 70668.7, 70629.4, 70589.1, 70548.0, 70505.9, 70462.8, 70418.8, 70373.7, 70327.7, 70280.6, 70232.5, 70183.3, 70133.0, 70081.7, 70029.1, 69975.5, 69920.6, 69864.6, 69807.3, 69748.7, 69688.9, 69627.8, 69565.4, 69501.5, 69436.3, 69369.7, 69301.6, 69232.1, 69161.0, 69088.4, 69014.2, 68938.3, 68860.8, 68781.6, 68700.7, 68618.0, 68533.4, 68447.0, 68358.7, 68268.4, 68176.1, 68081.8, 67985.3, 67886.6, 67785.8, 67682.6, 67577.1, 67469.2, 67358.8, 67245.9, 67130.3, 67012.1, 66891.1, 66767.2, 66640.4, 66510.6, 66377.7, 66241.7, 66102.3, 65959.5, 65813.2, 65663.3, 65509.7, 65352.2, 65190.7, 65025.1, 64855.3, 64681.1, 64502.4, 64318.9, 64130.6, 63937.3, 63738.7, 63534.7, 63325.1, 63109.7, 62888.2, 62660.4, 62426.1, 62185.0, 61936.8, 61681.3, 61418.1, 61146.9, 60867.4, 60579.2, 60281.9, 59975.1, 59658.4, 59331.4, 58993.4, 58644.1, 58282.8, 57908.9, 57521.9, 57121.0, 56705.6, 56274.8, 55827.8, 55363.8, 54881.7, 54380.5, 53859.1, 53316.4, 52750.9, 52161.4, 51546.1, 50903.6, 50231.9, 49529.1, 48793.1, 48021.4, 47211.5, 46360.4, 45465.2, 44522.2, 43527.6, 42477.3, 41366.3, 40189.4, 38940.7, 37613.4, 36200.2, 34692.5, 33080.7, 31354.0, 29499.9, 27504.2, 25350.8, 23021.1, 20494.1, 17746.6, 14753.9, 11495.6, 7979.2, 4411.4, 3063.8, 6855.0, 12287.6, 18638.4, 25934.3, 34316.2, 43976.5, 55143.6, 68062.7, 82946.0, 99859.1, 118486.9, 137739.6, 155304.6, 167670.9, 171424.1, 165473.6, 151918.6, 134435.7, 116198.4, 99085.6, 83905.9, 70854.8, 59851.6, 50726.2, 43305.1, 37442.7, 33020.7, 29926.8, 28026.1, 27142.0, 27063.9, 27577.2, 28492.3, 29660.4, 30973.4, 32356.8, 33761.3, 35155.1, 36518.1, 37838.5, 39109.5, 40327.8, 41492.4, 42603.7, 43663.0, 44672.1, 45633.3, 46548.8, 47421.0, 48252.3, 49045.0, 49801.2, 50523.0, 51212.5, 51871.5, 52501.7, 53104.7, 53682.2, 54235.5, 54766.1, 55275.0, 55763.6, 56232.8, 56683.8, 57117.5, 57534.7, 57936.3, 58323.1, 58695.8, 59055.2, 59401.7, 59736.1, 60058.9, 60370.7, 60671.9, 60963.1, 61244.6, 61516.9, 61780.4, 62035.5, 62282.5, 62521.7, 62753.5, 62978.2, 63196.0, 63407.3, 63612.2, 63811.1, 64004.1, 64191.5, 64373.5, 64550.3, 64722.0, 64888.9, 65051.1, 65208.8, 65362.2, 65511.3, 65656.4, 65797.5, 65934.9, 66068.6, 66198.7, 66325.4, 66448.8, 66568.9, 66685.9, 66799.9, 66911.0, 67019.2, 67124.7, 67227.5, 67327.7, 67425.3, 67520.6, 67613.4, 67704.0, 67792.3, 67878.4, 67962.4, 68044.3, 68124.3, 68202.2, 68278.3, 68352.6, 68425.0, 68495.7, 68564.7, 68632.0, 68697.7, 68761.8, 68824.4, 68885.4, 68945.1, 69003.3, 69060.1, 69115.5, 69169.6, 69222.5, 69274.0, 69324.4, 69373.5, 69421.5, 69468.3, 69514.0, 69558.6, 69602.1, 69644.6, 69686.0, 69726.5, 69766.0, 69804.5, 69842.1, 69878.8, 69914.6, 69949.5, 69983.6, 70016.8, 70049.3, 70080.9, 70111.7, 70141.8, 70171.1, 70199.7, 70227.5, 70254.7, 70281.2, 70306.9, 70332.1, 70356.6, 70380.4, 70403.6, 70426.3, 70448.3, 70469.7, 70490.6, 70510.9, 70530.6, 70549.9, 70568.6, 70586.7, 70604.4, 70621.6, 70638.2, 70654.5, 70670.2, 70685.5, 70700.3, 70714.7, 70728.7, 70742.2, 70755.3, 70768.0, 70780.4, 70792.3, 70803.8, 70815.0, 70825.8, 70836.3, 70846.4, 70856.1, 70865.5, 70874.6, 70883.4, 70891.8, 70899.9, 70907.8, 70915.3, 70922.6, 70929.5, 70936.2, 70942.6, 70948.7, 70954.6, 70960.2, 70965.6, 70970.7, 70975.6, 70980.3, 70984.8, 70989.0, 70993.0, 70996.8, 71000.4, 71003.8, 71007.0, 71010.0, 71012.8, 71015.4, 71017.9, 71020.2, 71022.4, 71024.4, 71026.2, 71027.9, 71029.5, 71030.9, 71032.2, 71033.3, 71034.4, 71035.3, 71036.1, 71036.9, 71037.5, 71038.0, 71038.4, 71038.8, 71039.1, 71039.3, 71039.4, 71039.5, 71039.6, 71039.6, 71039.8, 71040.4, 71044.1, 71045.0], "anom": [0.3295, 0.1943, 0.0844, 0.0663, 0.1987, 0.0432, 0.0927, 0.0213, 0.0529, 0.1652, 0.0501, 0.0088, 0.1313, 0.0518, 0.0388, 0.1674, 0.2739, 0.0565, 0.0519, 0.0069, 0.1295, 0.2035, 0.7796, 0.3148, 0.0495, 0.2584, 0.0474, 0.2373, 0.0022, 0.0327, 0.0327, 0.0388, 0.0302, 0.0422, 0.0433, 0.0687, 0.0513, 0.045, 0.0154, 0.1771, 0.0285, 0.2003, 0.0432, 0.2219, 0.2743, 0.0964, 0.3564, 0.2322, 0.3859, 0.6006, 0.7571, 0.9313, 0.9846, 0.7166, 0.5432, 0.4268, 0.273, 0.2399, 0.1558, 0.2603, 0.0929, 0.2208, 0.0559, 0.0487, 0.0342, 0.0233, 0.0161, 0.0131, 0.0107, 0.0083, 0.0083, 0.0083, 0.0034, 0.0034, 0.1463, 0.1344, 0.1335, 0.0034, 0.1331, 0.0034, 0.0034, 0.0034, 0.0018, 0.0018, 0.0018, 0.0018, 0.0018, 0.0321, 0.0386, 0.0321, 0.0386, 0.0018, 0.0018, 0.0018, 0.0018, 0.0306, 0.0018, 0.0018, 0.0018, 0.0386, 0.0018, 0.0018, 0.0018, 0.0295, 0.0386, 0.0018, 0.0018, 0.0295, 0.0018, 0.0018, 0.0018, 0.0386, 0.0295, 0.0018, 0.0386, 0.0018, 0.0282, 0.0005, 0.0005, 0.0005, 0.0005, 0.0282, 0.0005, 0.0373, 0.0005, 0.0005, 0.027, 0.0005, 0.0005, 0.027, 0.0373, 0.0005, 0.0005, 0.0005, 0.0005, 0.0373, 0.0373, 0.0373, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.027, 0.0367, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.027, 0.0367, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0245, 0.0367, 0.0367, 0.0005, 0.027, 0.0129, 0.0129, 0.0005, 0.0129, 0.0367, 0.0005, 0.0129, 0.0237, 0.0666, 0.0129, 0.0129, 0.0237, 0.0129, 0.0005, 0.0129, 0.0005, 0.0237, 0.0005, 0.0005, 0.0128, 0.0237, 0.0665, 0.0005, 0.0005, 0.0005, 0.0237, 0.0005, 0.0005, 0.0005, 0.0885, 0.0128, 0.0128, 0.0237, 0.0389, 0.0005, 0.0005, 0.0389, 0.0005, 0.0269, 0.0237, 0.0389, 0.0237, 0.0141, 0.0282, 0.0237, 0.0141, 0.0005, 0.0389, 0.0237, 0.0237, 0.0237, 0.0005, 0.0144, 0.0005, 0.0118, 0.0237, 0.0144, 0.0144, 0.0237, 0.0282, 0.0131, 0.0269, 0.0131, 0.0254, 0.0254, 0.0005, 0.0269, 0.0005, 0.0367, 0.0005, 0.0118, 0.0143, 0.0383, 0.027, 0.0005, 0.1226, 0.0005, 0.0005, 0.0143, 0.0005, 0.0005, 0.0005, 0.0414, 0.011, 0.0671, 0.0932, 0.0157, 0.027, 0.0659, 0.0662, 0.0102, 0.0409, 0.0436, 0.1019, 0.0569, 0.0616, 0.0197, 0.0258, 0.0591, 0.0308, 0.0644, 0.0572, 0.0551, 0.1081, 0.0897, 0.216, 0.1898, 0.138, 0.1472, 0.1484, 0.184, 0.2249, 0.3738, 0.2438, 0.2726, 0.4145, 0.3538, 0.395, 0.477, 0.4212, 0.4321, 0.2842, 0.3364, 0.2968, 0.2339, 0.1802, 0.223, 0.1728, 0.1629, 0.1002, 0.1197, 0.0793, 0.1017, 0.1461, 0.0674, 0.0591, 0.0295, 0.0618, 0.0303, 0.0683, 0.0275, 0.0428, 0.0208, 0.0508, 0.0202, 0.0154, 0.0022, 0.0111, 0.0406, 0.042, 0.043, 0.0307, 0.0401, 0.028, 0.028, 0.0265, 0.0106, 0.0, 0.0222, 0.0106, 0.0267, 0.121, 0.0004, 0.0004, 0.024, 0.0004, 0.0004, 0.0241, 0.0126, 0.0241, 0.0004, 0.0013, 0.0364, 0.0023, 0.0637, 0.0375, 0.0251, 0.1563, 0.0243, 0.0243, 0.0162, 0.0375, 0.0243, 0.0023, 0.0023, 0.0665, 0.0162, 0.0023, 0.0023, 0.028, 0.0162, 0.0243, 0.0162, 0.0243, 0.0124, 0.0243, 0.0023, 0.0162, 0.0162, 0.0023, 0.028, 0.0898, 0.0162, 0.0023, 0.0158, 0.0375, 0.0243, 0.0158, 0.0023, 0.0158, 0.0248, 0.0023, 0.0158, 0.0248, 0.0375, 0.0248, 0.0375, 0.0276, 0.0023, 0.0158, 0.0023, 0.0276, 0.0375, 0.0248, 0.0023, 0.0551, 0.012, 0.0661, 0.0122, 0.0248, 0.0023, 0.0248, 0.0023, 0.0375, 0.0137, 0.0023, 0.0137, 0.0144, 0.0375, 0.0248, 0.0023, 0.0248, 0.0023, 0.0898, 0.0023, 0.0023, 0.0023, 0.0144, 0.0266, 0.0266, 0.0023, 0.0254, 0.0013, 0.0013, 0.0013, 0.0243, 0.0243, 0.0013, 0.0243, 0.0013, 0.0013, 0.0364, 0.0364, 0.0013, 0.0243, 0.0243, 0.0013, 0.0013, 0.0013, 0.0013, 0.0243, 0.0013, 0.0364, 0.0243, 0.0013, 0.0013, 0.0013, 0.0243, 0.0243, 0.0243, 0.0243, 0.0364, 0.0364, 0.0243, 0.0364, 0.0004, 0.0243, 0.0364, 0.0004, 0.0243, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0243, 0.0004, 0.0004, 0.0004, 0.0004, 0.0364, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0409, 0.0004, 0.0004, 0.0004, 0.0267, 0.0004, 0.0267, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0267, 0.0267, 0.0267, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004, 0.0024, 0.0024, 0.0024, 0.0046, 0.0077, 0.0101, 0.157, 0.0212, 0.0299, 0.038, 0.2155, 0.229, 0.0838, 0.1338, 0.2476, 0.3854, 0.7538, 0.847, 0.8819], "jerk": [-15.0, -7.7573, -7.8751, -7.981, -8.0775, -8.1662, -8.2486, -8.3258, -8.3986, -8.4678, -8.5278, -8.5918, -8.6538, -8.7142, -8.7731, -8.8306, -8.8865, -8.94, -8.9899, -9.0338, -9.0685, -9.0901, -7.5497, -9.081, -9.0541, -9.0157, -8.9695, -8.9183, -8.8641, -8.8077, -8.7499, -8.6907, -8.6299, -8.5673, -8.5025, -8.435, -8.3643, -8.2897, -8.2103, -8.1251, -8.0331, -7.9325, -7.8215, -7.6973, -7.5562, -7.3927, -7.1984, -6.9596, -6.6512, -6.2221, -5.5605, -4.9391, -4.9085, -5.7439, -6.3673, -6.7759, -7.0744, -7.3083, -7.5, -7.6622, -7.8027, -7.9265, -8.0371, -8.137, -8.228, -8.3116, -8.389, -8.4608, -8.528, -8.591, -8.6503, -8.7063, -8.7594, -8.8099, -8.8579, -8.9038, -8.9477, -8.9897, -9.03, -9.0688, -9.1062, -9.1422, -9.1769, -9.2105, -9.243, -9.2745, -9.305, -9.3346, -9.3633, -9.3913, -9.4185, -9.4449, -9.4707, -9.4958, -9.5203, -9.5442, -9.5675, -9.5903, -9.6126, -9.6344, -9.6558, -9.6766, -9.6971, -9.7171, -9.7367, -9.756, -9.7748, -9.7934, -9.8115, -9.8294, -9.8469, -9.8641, -9.881, -9.8977, -9.914, -9.9301, -9.9459, -9.9615, -9.9768, -9.9919, -10.0068, -10.0214, -10.0358, -10.05, -10.064, -10.0778, -10.0914, -10.1048, -10.118, -10.131, -10.1439, -10.1566, -10.1691, -10.1815, -10.1937, -10.2057, -10.2176, -10.2293, -10.2409, -10.2524, -10.2637, -10.2749, -10.2859, -10.2968, -10.3076, -10.3182, -10.3287, -10.3391, -10.3494, -10.3595, -10.3695, -10.3795, -10.3893, -10.3989, -10.4085, -10.418, -10.4273, -10.4366, -10.4457, -10.4548, -10.4637, -10.4725, -10.4812, -10.4899, -10.4984, -10.5068, -10.5151, -10.5233, -10.5314, -10.5394, -10.5473, -10.5551, -10.5628, -10.5704, -10.5779, -10.5853, -10.5926, -10.5998, -10.6068, -10.6138, -10.6206, -10.6274, -10.634, -10.6405, -10.6469, -10.6532, -10.6593, -10.6653, -10.6712, -10.6769, -10.6825, -10.688, -10.6933, -10.6985, -10.7035, -10.7083, -10.713, -10.7174, -10.7217, -10.7258, -10.7297, -10.7334, -10.7368, -10.74, -10.743, -10.7457, -10.7481, -10.7503, -10.7521, -10.7537, -10.7549, -10.7557, -10.7562, -10.7563, -10.756, -10.7553, -10.7541, -10.7525, -10.7504, -10.7478, -10.7446, -10.7409, -10.7366, -10.7318, -10.7263, -10.7201, -10.7133, -10.7059, -10.6977, -10.6888, -10.6792, -10.6688, -10.6576, -10.6457, -10.6329, -10.6194, -10.605, -10.5898, -10.5737, -10.5568, -10.539, -10.5204, -10.5009, -10.4805, -10.4592, -10.4371, -10.414, -10.3899, -10.365, -10.3391, -10.3122, -10.2843, -10.2555, -10.2256, -10.1946, -10.1625, -10.1293, -10.0949, -10.0593, -10.0224, -9.9842, -9.9446, -9.9035, -9.8609, -9.8167, -9.7707, -9.7228, -9.673, -9.6211, -9.5669, -9.5103, -9.4511, -9.3891, -9.324, -9.2555, -9.1835, -9.1075, -9.0274, -8.9426, -8.853, -8.7583, -8.6584, -8.5534, -8.4442, -8.3325, -8.2217, -8.1176, -8.029, -7.9657, -7.9327, -7.9256, -7.9412, -7.9851, -8.0586, -8.154, -8.2613, -8.373, -8.4841, -8.5919, -8.6951, -8.7931, -8.886, -8.9738, -9.0569, -9.1355, -9.2101, -9.2808, -9.348, -9.412, -9.4731, -9.5314, -9.5871, -9.6405, -9.6917, -9.7409, -9.7882, -9.8336, -9.8774, -9.9196, -9.9602, -9.9995, -10.0374, -10.074, -10.1093, -10.1435, -10.1765, -10.2084, -10.2393, -10.2691, -10.2979, -10.3258, -10.3526, -10.3786, -10.4036, -10.4277, -10.4509, -10.4732, -10.4946, -10.5152, -10.5349, -10.5538, -10.5718, -10.5889, -10.6053, -10.6208, -10.6354, -10.6493, -10.6624, -10.6747, -10.6862, -10.6969, -10.7069, -10.7162, -10.7247, -10.7326, -10.7397, -10.7462, -10.752, -10.7572, -10.7618, -10.7659, -10.7693, -10.7723, -10.7747, -10.7766, -10.778, -10.779, -10.7796, -10.7797, -10.7795, -10.7789, -10.7779, -10.7766, -10.775, -10.7731, -10.7708, -10.7683, -10.7656, -10.7626, -10.7593, -10.7558, -10.7521, -10.7482, -10.7441, -10.7399, -10.7354, -10.7307, -10.7259, -10.721, -10.7158, -10.7106, -10.7052, -10.6996, -10.6939, -10.6881, -10.6822, -10.6761, -10.6699, -10.6636, -10.6572, -10.6507, -10.644, -10.6373, -10.6304, -10.6235, -10.6164, -10.6092, -10.602, -10.5946, -10.5872, -10.5796, -10.572, -10.5642, -10.5564, -10.5484, -10.5404, -10.5323, -10.524, -10.5157, -10.5073, -10.4987, -10.4901, -10.4814, -10.4726, -10.4637, -10.4546, -10.4455, -10.4363, -10.427, -10.4175, -10.408, -10.3983, -10.3886, -10.3787, -10.3687, -10.3586, -10.3484, -10.3381, -10.3276, -10.317, -10.3063, -10.2955, -10.2845, -10.2735, -10.2622, -10.2509, -10.2394, -10.2277, -10.2159, -10.204, -10.1919, -10.1796, -10.1672, -10.1547, -10.1419, -10.129, -10.1159, -10.1026, -10.0892, -10.0755, -10.0617, -10.0476, -10.0334, -10.0189, -10.0042, -9.9893, -9.9742, -9.9588, -9.9432, -9.9273, -9.9111, -9.8947, -9.878, -9.861, -9.8437, -9.8261, -9.8082, -9.79, -9.7714, -9.7524, -9.7331, -9.7134, -9.6933, -9.6727, -9.6518, -9.6304, -9.6085, -9.5861, -9.5631, -9.5397, -9.5157, -9.491, -9.4658, -9.4399, -9.4133, -9.386, -9.3579, -9.3289, -9.2992, -9.2685, -9.2368, -9.2041, -9.1702, -9.1352, -9.099, -9.0613, -9.0222, -8.9815, -8.9391, -8.8949, -8.8486, -8.8, -8.749, -8.6953, -8.6386, -8.5786, -8.5147, -8.4466, -8.3737, -8.2951, -8.2099, -8.1171, -8.015, -7.9018, -7.7747, -7.6299, -7.4619, -7.262, -7.016, -6.6974, -6.251, -5.5467, -15.0], "sr": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, -0.0, 0.0, -0.0, -0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, -0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, -0.0, -0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, -0.0, -0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, 0.0, -0.0, -0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, -0.0, -0.0, -0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0], "er": [0.0, -1.58e-05, -2.99e-05, -4.383e-05, -5.831e-05, -7.365e-05, -8.991e-05, -0.00010707, -0.00012504, -0.00014368, -0.00016099, -0.00018053, -0.00020032, -0.00022023, -0.00024011, -0.00025982, -0.00027925, -0.00029827, -0.00031677, -0.00033464, -0.00035177, -0.00036808, 0.00437385, 0.0043594, 0.00434606, 0.00433388, 0.00432296, 0.00431335, 0.00430514, 0.00429838, 0.00429315, 0.0042895, 0.00428751, 0.00428724, 0.00428875, 0.00429212, 0.00429743, 0.00430477, 0.00431425, 0.00432603, 0.00434031, 0.00435739, 0.00437779, 0.00440238, 0.00443283, 0.00447262, 0.00452995, 0.0046273, 0.00484141, 0.00553913, 0.00963914, 0.01619701, 3.36473583, 3.93556238, 3.93324785, 3.93277823, 3.93265311, 3.93262613, 3.93263574, 3.93266159, 3.93269552, 3.93273381, 3.93277454, 3.93281669, 3.93285964, 3.93290302, 3.9329466, 3.93299021, 3.93303376, 3.93307717, 3.93312039, 3.93316337, 3.93320611, 3.93324856, 3.93329073, 3.93333261, 3.93337418, 3.93341544, 3.93345639, 3.93349704, 3.93353737, 3.93357739, 3.9336171, 3.93365651, 3.93369561, 3.93373441, 3.93377292, 3.93381112, 3.93384904, 3.93388667, 3.93392401, 3.93396108, 3.93399786, 3.93403438, 3.93407062, 3.9341066, 3.93414232, 3.93417779, 3.934213, 3.93424796, 3.93428268, 3.93431716, 3.9343514, 3.93438541, 3.93441919, 3.93445275, 3.93448608, 3.93451921, 3.93455212, 3.93458482, 3.93461732, 3.93464962, 3.93468173, 3.93471364, 3.93474537, 3.93477691, 3.93480827, 3.93483946, 3.93487048, 3.93490133, 3.93493202, 3.93496255, 3.93499292, 3.93502314, 3.93505321, 3.93508314, 3.93511293, 3.93514258, 3.93517211, 3.9352015, 3.93523077, 3.93525991, 3.93528894, 3.93531786, 3.93534667, 3.93537537, 3.93540397, 3.93543247, 3.93546087, 3.93548918, 3.93551741, 3.93554555, 3.93557361, 3.9356016, 3.93562951, 3.93565735, 3.93568512, 3.93571284, 3.93574049, 3.93576809, 3.93579563, 3.93582313, 3.93585058, 3.93587798, 3.93590535, 3.93593269, 3.93595999, 3.93598726, 3.93601451, 3.93604174, 3.93606895, 3.93609614, 3.93612332, 3.93615049, 3.93617766, 3.93620482, 3.93623198, 3.93625915, 3.93628633, 3.93631351, 3.93634071, 3.93636792, 3.93639515, 3.9364224, 3.93644968, 3.93647699, 3.93650432, 3.93653169, 3.9365591, 3.93658654, 3.93661403, 3.93664156, 3.93666914, 3.93669677, 3.93672444, 3.93675218, 3.93677997, 3.93680782, 3.93683573, 3.9368637, 3.93689174, 3.93691984, 3.93694802, 3.93697627, 3.93700459, 3.93703298, 3.93706145, 3.93709, 3.93711863, 3.93714734, 3.93717612, 3.93720499, 3.93723394, 3.93726298, 3.9372921, 3.9373213, 3.93735058, 3.93737994, 3.93740939, 3.93743891, 3.93746852, 3.9374982, 3.93752796, 3.93755779, 3.93758769, 3.93761766, 3.93764769, 3.93767778, 3.93770792, 3.93773811, 3.93776834, 3.9377986, 3.93782889, 3.9378592, 3.93788952, 3.93791983, 3.93795013, 3.9379804, 3.93801063, 3.9380408, 3.93807089, 3.93810089, 3.93813077, 3.93816051, 3.93819008, 3.93821946, 3.9382486, 3.93827749, 3.93830607, 3.93833431, 3.93836216, 3.93838957, 3.93841648, 3.93844282, 3.93846854, 3.93849354, 3.93851775, 3.93854106, 3.93856338, 3.93858458, 3.93860454, 3.93862309, 3.93864009, 3.93865534, 3.93866863, 3.93867973, 3.93868837, 3.93869425, 3.93869703, 3.93869632, 3.93869168, 3.93868259, 3.93866847, 3.93864864, 3.93862231, 3.93858859, 3.93854639, 3.93849447, 3.93843136, 3.9383553, 3.9382642, 3.93815556, 3.93802636, 3.93787291, 3.93769071, 3.93747423, 3.93721657, 3.93690914, 3.93654112, 3.93609887, 3.93556509, 3.934918, 3.93413046, 3.93316973, 3.93199908, 3.93058404, 3.92890866, 3.92700871, 3.92502059, 3.92321111, 3.92191071, 3.92133217, 3.92143889, 3.92201236, 3.9228123, 3.92366816, 3.92448671, 3.92522751, 3.92587919, 3.92644422, 3.92693071, 3.92734834, 3.92770659, 3.92801399, 3.92827797, 3.92850483, 3.92869992, 3.9288677, 3.92901196, 3.92913586, 3.92924207, 3.92933288, 3.9294102, 3.92947569, 3.92953075, 3.92957661, 3.9296143, 3.92964474, 3.92966873, 3.92968694, 3.9297, 3.92970843, 3.92971269, 3.92971322, 3.92971036, 3.92970446, 3.92969581, 3.92968465, 3.92967123, 3.92965576, 3.92963843, 3.92961939, 3.92959882, 3.92957684, 3.92955358, 3.92952916, 3.92950367, 3.92947722, 3.92944989, 3.92942175, 3.92939288, 3.92936334, 3.92933319, 3.92930249, 3.92927129, 3.92923963, 3.92920756, 3.92917511, 3.92914232, 3.92910922, 3.92907585, 3.92904223, 3.92900839, 3.92897435, 3.92894014, 3.92890577, 3.92887126, 3.92883663, 3.9288019, 3.92876708, 3.92873219, 3.92869723, 3.92866222, 3.92862718, 3.92859211, 3.92855701, 3.92852191, 3.9284868, 3.9284517, 3.9284166, 3.92838153, 3.92834648, 3.92831145, 3.92827646, 3.92824151, 3.9282066, 3.92817173, 3.92813692, 3.92810216, 3.92806745, 3.9280328, 3.92799821, 3.92796368, 3.92792922, 3.92789482, 3.92786049, 3.92782623, 3.92779204, 3.92775791, 3.92772387, 3.92768989, 3.92765599, 3.92762216, 3.9275884, 3.92755472, 3.92752111, 3.92748758, 3.92745412, 3.92742074, 3.92738743, 3.9273542, 3.92732103, 3.92728794, 3.92725493, 3.92722198, 3.92718911, 3.9271563, 3.92712357, 3.92709091, 3.92705831, 3.92702578, 3.92699332, 3.92696093, 3.9269286, 3.92689633, 3.92686413, 3.92683198, 3.9267999, 3.92676788, 3.92673592, 3.92670401, 3.92667217, 3.92664037, 3.92660863, 3.92657695, 3.92654531, 3.92651373, 3.92648219, 3.92645071, 3.92641927, 3.92638787, 3.92635652, 3.92632521, 3.92629395, 3.92626272, 3.92623153, 3.92620038, 3.92616927, 3.9261382, 3.92610715, 3.92607614, 3.92604516, 3.92601421, 3.92598329, 3.9259524, 3.92592154, 3.92589069, 3.92585988, 3.92582908, 3.92579831, 3.92576756, 3.92573682, 3.92570611, 3.92567541, 3.92564473, 3.92561406, 3.9255834, 3.92555276, 3.92552213, 3.92549151, 3.92546089, 3.92543029, 3.92539969, 3.9253691, 3.92533852, 3.92530794, 3.92527736, 3.92524679, 3.92521622, 3.92518565, 3.92515508, 3.92512451, 3.92509395, 3.92506338, 3.92503281, 3.92500224, 3.92497167, 3.9249411, 3.92491053, 3.92487995, 3.92484938, 3.9248188, 3.92478822, 3.92475764, 3.92472706, 3.92469648, 3.9246659, 3.92463532, 3.92460474, 3.92457417, 3.9245436, 3.92451304, 3.92448249, 3.92445195, 3.92442142, 3.9243909, 3.92436039, 3.92432991, 3.92429945, 3.92426901, 3.9242386, 3.92420823, 3.92417789, 3.92414759, 3.92411734, 3.92408714, 3.924057, 3.92402692, 3.92399691, 3.92396698, 3.92393714, 3.92390739, 3.92387775, 3.92384823, 3.92381883, 3.92378956, 3.92376044, 3.92373148, 3.92370268, 3.92367405, 3.92364558, 3.92361726, 3.92358906, 3.92356089, 3.9235326, 3.9235039, 3.92347423, 3.92344259, 3.9234076, 3.92337227, 3.92341812, 3.9255895, 3.94513392], "x": [-30.2353, -30.8694, -31.2656, -31.4626, -31.4897, -31.3695, -31.1203, -30.7566, -30.2906, -29.7324, -29.1558, -28.4447, -27.6631, -26.8166, -25.9103, -24.9486, -23.9355, -22.8745, -21.7689, -20.6219, -19.4361, -18.2142, -16.9575, -15.6624, -14.3383, -12.9876, -11.6123, -10.2147, -8.797, -7.3616, -5.9108, -4.4472, -2.9736, -1.4929, -0.0084, 1.476, 2.9561, 4.4266, 5.8817, 7.3139, 8.714, 10.0704, 11.368, 12.5862, 13.6968, 14.6583, 15.4073, 15.8384, 15.7581, 14.7502, 11.6521, 2.2188, -1.6877, -13.8381, -20.9375, -26.1502, -30.3605, -33.9388, -37.0761, -39.8852, -42.4383, -44.785, -46.9611, -48.993, -50.9012, -52.7018, -54.4077, -56.0294, -57.5756, -59.0538, -60.47, -61.8298, -63.1376, -64.3975, -65.6131, -66.7874, -67.9233, -69.0231, -70.0893, -71.1236, -72.128, -73.104, -74.0533, -74.9771, -75.8768, -76.7534, -77.6081, -78.4418, -79.2555, -80.0499, -80.826, -81.5844, -82.3258, -83.0509, -83.7603, -84.4545, -85.1341, -85.7996, -86.4514, -87.0901, -87.716, -88.3295, -88.9311, -89.521, -90.0997, -90.6674, -91.2246, -91.7714, -92.3081, -92.8351, -93.3525, -93.8607, -94.3599, -94.8503, -95.332, -95.8055, -96.2707, -96.728, -97.1774, -97.6193, -98.0537, -98.4809, -98.9009, -99.314, -99.7203, -100.1199, -100.5129, -100.8996, -101.28, -101.6543, -102.0225, -102.3849, -102.7415, -103.0924, -103.4377, -103.7776, -104.1121, -104.4414, -104.7655, -105.0845, -105.3986, -105.7077, -106.012, -106.3117, -106.6066, -106.897, -107.183, -107.4645, -107.7417, -108.0146, -108.2833, -108.5479, -108.8084, -109.0649, -109.3175, -109.5662, -109.8112, -110.0523, -110.2898, -110.5237, -110.754, -110.9807, -111.204, -111.4239, -111.6404, -111.8537, -112.0636, -112.2704, -112.474, -112.6744, -112.8719, -113.0663, -113.2577, -113.4462, -113.6318, -113.8146, -113.9946, -114.1718, -114.3463, -114.5182, -114.6874, -114.854, -115.0181, -115.1797, -115.3388, -115.4954, -115.6497, -115.8017, -115.9513, -116.0986, -116.2437, -116.3866, -116.5274, -116.666, -116.8025, -116.937, -117.0694, -117.1999, -117.3284, -117.455, -117.5797, -117.7026, -117.8237, -117.9431, -118.0607, -118.1766, -118.2909, -118.4036, -118.5146, -118.6242, -118.7322, -118.8388, -118.944, -119.0477, -119.1502, -119.2513, -119.3511, -119.4498, -119.5472, -119.6435, -119.7387, -119.8329, -119.926, -120.0182, -120.1095, -120.1999, -120.2895, -120.3783, -120.4664, -120.5539, -120.6408, -120.7271, -120.8129, -120.8983, -120.9833, -121.068, -121.1525, -121.2368, -121.3211, -121.4053, -121.4896, -121.574, -121.6587, -121.7437, -121.8291, -121.915, -122.0016, -122.0889, -122.1771, -122.2662, -122.3565, -122.448, -122.5409, -122.6354, -122.7317, -122.8298, -122.9301, -123.0327, -123.1378, -123.2458, -123.3568, -123.4712, -123.5893, -123.7114, -123.8379, -123.9692, -124.1058, -124.2481, -124.3969, -124.5526, -124.7159, -124.8878, -125.069, -125.2607, -125.4638, -125.6798, -125.9102, -126.1567, -126.4213, -126.7063, -127.0145, -127.3489, -127.713, -128.1106, -128.5456, -129.0213, -129.5394, -130.0976, -130.6863, -131.2854, -131.8645, -132.3901, -132.8364, -133.1915, -133.4565, -133.6393, -133.7507, -133.8012, -133.7999, -133.7546, -133.6718, -133.5567, -133.4134, -133.2456, -133.0561, -132.8473, -132.6211, -132.3794, -132.1235, -131.8547, -131.574, -131.2824, -130.9806, -130.6694, -130.3494, -130.021, -129.6849, -129.3415, -128.991, -128.634, -128.2706, -127.9012, -127.526, -127.1453, -126.7593, -126.3682, -125.9722, -125.5713, -125.1659, -124.7559, -124.3416, -123.9231, -123.5005, -123.0738, -122.6432, -122.2088, -121.7706, -121.3287, -120.8833, -120.4343, -119.9818, -119.526, -119.0668, -118.6042, -118.1385, -117.6695, -117.1973, -116.7221, -116.2437, -115.7623, -115.2779, -114.7905, -114.3001, -113.8068, -113.3107, -112.8116, -112.3097, -111.805, -111.2975, -110.7872, -110.2742, -109.7584, -109.2398, -108.7186, -108.1946, -107.668, -107.1387, -106.6067, -106.0721, -105.5349, -104.995, -104.4525, -103.9074, -103.3597, -102.8094, -102.2566, -101.7011, -101.1431, -100.5825, -100.0194, -99.4536, -98.8854, -98.3146, -97.7412, -97.1653, -96.5868, -96.0058, -95.4223, -94.8362, -94.2476, -93.6564, -93.0628, -92.4665, -91.8677, -91.2664, -90.6626, -90.0562, -89.4472, -88.8357, -88.2217, -87.6051, -86.9859, -86.3642, -85.7399, -85.113, -84.4836, -83.8516, -83.217, -82.5798, -81.94, -81.2976, -80.6526, -80.005, -79.3548, -78.702, -78.0465, -77.3883, -76.7276, -76.0641, -75.398, -74.7292, -74.0578, -73.3836, -72.7068, -72.0272, -71.3449, -70.6599, -69.9721, -69.2816, -68.5883, -67.8923, -67.1934, -66.4918, -65.7874, -65.0801, -64.37, -63.657, -62.9412, -62.2226, -61.501, -60.7765, -60.0491, -59.3188, -58.5855, -57.8493, -57.1101, -56.3679, -55.6227, -54.8745, -54.1232, -53.3689, -52.6115, -51.851, -51.0874, -50.3207, -49.5508, -48.7778, -48.0015, -47.2221, -46.4395, -45.6536, -44.8644, -44.072, -43.2762, -42.4772, -41.6748, -40.869, -40.0598, -39.2473, -38.4312, -37.6118, -36.7889, -35.9624, -35.1325, -34.299, -33.4619, -32.6213, -31.7771, -30.9292, -30.0777, -29.2225, -28.3636, -27.501, -26.6347, -25.7647, -24.8909, -24.0133, -23.1319, -22.2467, -21.3578, -20.465, -19.5683, -18.6679, -17.7637, -16.8556, -15.9438, -15.0282, -14.1088, -13.1858, -12.2591, -11.3287, -10.3949, -9.4576, -8.517, -7.5731, -6.6262, -5.6765, -4.7241, -3.7693, -2.8125, -1.854, -0.8943, 0.0661, 1.0264, 1.9858, 2.9434, 3.8978, 4.8474, 5.7903, 6.7239, 7.645, 8.5493, 9.4311, 10.2825, 11.0925, 11.8453, 12.5165, 13.0673, 13.43, 13.4738, 12.8968, 10.7594, 3.8682], "y": [-28.35, -31.8352, -35.0756, -38.0931, -40.9052, -43.5263, -45.9685, -48.2418, -50.3547, -52.3144, -53.9585, -55.6426, -57.1888, -58.601, -59.8823, -61.0356, -62.063, -62.9663, -63.7469, -64.4058, -64.9438, -65.361, -65.6575, -65.833, -65.8866, -65.8174, -65.6238, -65.304, -64.8557, -64.2763, -63.5625, -62.7105, -61.716, -60.5738, -59.278, -57.8215, -56.1964, -54.393, -52.4001, -50.2045, -47.7899, -45.137, -42.2216, -39.0134, -35.4736, -31.5508, -27.1751, -22.2463, -16.6145, -10.0433, -2.2055, 5.4514, 5.9216, 1.7697, -3.7342, -8.974, -13.8859, -18.5143, -22.9046, -27.0933, -31.1089, -34.9737, -38.7054, -42.3186, -45.825, -49.2346, -52.5557, -55.7956, -58.9603, -62.0553, -65.0852, -68.0543, -70.9662, -73.8242, -76.6313, -79.3901, -82.1032, -84.7728, -87.4007, -89.989, -92.5393, -95.0532, -97.5321, -99.9774, -102.3904, -104.7722, -107.1239, -109.4466, -111.7411, -114.0085, -116.2495, -118.465, -120.6556, -122.8222, -124.9654, -127.0858, -129.1841, -131.2607, -133.3163, -135.3514, -137.3665, -139.362, -141.3385, -143.2963, -145.2358, -147.1575, -149.0617, -150.9488, -152.8191, -154.6731, -156.5109, -158.333, -160.1395, -161.9309, -163.7074, -165.4692, -167.2166, -168.9498, -170.6692, -172.3749, -174.0671, -175.7461, -177.4121, -179.0652, -180.7058, -182.3339, -183.9498, -185.5536, -187.1455, -188.7258, -190.2944, -191.8517, -193.3977, -194.9327, -196.4567, -197.9699, -199.4724, -200.9645, -202.4461, -203.9175, -205.3787, -206.83, -208.2713, -209.7028, -211.1247, -212.537, -213.9399, -215.3334, -216.7177, -218.0929, -219.459, -220.8161, -222.1644, -223.504, -224.8348, -226.1571, -227.4709, -228.7762, -230.0732, -231.362, -232.6426, -233.915, -235.1795, -236.436, -237.6846, -238.9254, -240.1585, -241.3839, -242.6017, -243.8119, -245.0147, -246.21, -247.398, -248.5787, -249.7522, -250.9185, -252.0777, -253.2298, -254.3749, -255.513, -256.6443, -257.7687, -258.8863, -259.9972, -261.1013, -262.1988, -263.2897, -264.3741, -265.4519, -266.5233, -267.5882, -268.6468, -269.699, -270.745, -271.7847, -272.8182, -273.8455, -274.8667, -275.8817, -276.8908, -277.8938, -278.8908, -279.8819, -280.8671, -281.8464, -282.8199, -283.7876, -284.7495, -285.7056, -286.6561, -287.6008, -288.54, -289.4735, -290.4014, -291.3238, -292.2406, -293.152, -294.0579, -294.9583, -295.8534, -296.743, -297.6273, -298.5062, -299.3798, -300.2482, -301.1112, -301.9691, -302.8217, -303.6691, -304.5113, -305.3484, -306.1803, -307.0071, -307.8289, -308.6455, -309.4571, -310.2636, -311.0651, -311.8616, -312.6531, -313.4396, -314.2212, -314.9977, -315.7693, -316.536, -317.2977, -318.0545, -318.8063, -319.5533, -320.2953, -321.0323, -321.7644, -322.4916, -323.2138, -323.9311, -324.6433, -325.3505, -326.0527, -326.7498, -327.4418, -328.1286, -328.8102, -329.4865, -330.1574, -330.8228, -331.4826, -332.1366, -332.7848, -333.4269, -334.0626, -334.6917, -335.3139, -335.9288, -336.5358, -337.1344, -337.7238, -338.3031, -338.8712, -339.4264, -339.9669, -340.4903, -340.9931, -341.471, -341.9182, -342.3264, -342.685, -342.9794, -343.1914, -343.2999, -343.2854, -343.1375, -342.8613, -342.4769, -342.0117, -341.4912, -340.9354, -340.3578, -339.7674, -339.1698, -338.5683, -337.965, -337.3611, -336.7573, -336.1538, -335.5508, -334.9483, -334.346, -333.744, -333.142, -332.5397, -331.9371, -331.3339, -330.7299, -330.125, -329.5189, -328.9115, -328.3027, -327.6922, -327.08, -326.4658, -325.8497, -325.2313, -324.6107, -323.9878, -323.3623, -322.7342, -322.1035, -321.47, -320.8336, -320.1943, -319.5519, -318.9065, -318.2578, -317.606, -316.9508, -316.2922, -315.6301, -314.9646, -314.2955, -313.6227, -312.9463, -312.2661, -311.5822, -310.8943, -310.2026, -309.5069, -308.8073, -308.1035, -307.3957, -306.6837, -305.9675, -305.2471, -304.5224, -303.7934, -303.06, -302.3221, -301.5799, -300.8331, -300.0817, -299.3258, -298.5652, -297.7999, -297.03, -296.2552, -295.4757, -294.6913, -293.902, -293.1078, -292.3086, -291.5044, -290.6952, -289.8808, -289.0613, -288.2367, -287.4068, -286.5716, -285.7311, -284.8852, -284.034, -283.1773, -282.3151, -281.4474, -280.574, -279.6951, -278.8105, -277.9202, -277.0241, -276.1222, -275.2144, -274.3007, -273.3811, -272.4555, -271.5238, -270.586, -269.642, -268.6918, -267.7354, -266.7726, -265.8035, -264.828, -263.8459, -262.8574, -261.8622, -260.8604, -259.8519, -258.8366, -257.8144, -256.7854, -255.7494, -254.7064, -253.6563, -252.5991, -251.5347, -250.4629, -249.3838, -248.2973, -247.2033, -246.1017, -244.9925, -243.8755, -242.7508, -241.6182, -240.4776, -239.329, -238.1722, -237.0073, -235.8341, -234.6524, -233.4623, -232.2637, -231.0564, -229.8403, -228.6153, -227.3815, -226.1385, -224.8864, -223.625, -222.3542, -221.0739, -219.7841, -218.4844, -217.175, -215.8555, -214.526, -213.1862, -211.836, -210.4753, -209.104, -207.7219, -206.3288, -204.9247, -203.5092, -202.0824, -200.644, -199.1938, -197.7317, -196.2575, -194.771, -193.272, -191.7602, -190.2356, -188.6979, -187.1469, -185.5823, -184.0039, -182.4115, -180.8048, -179.1836, -177.5476, -175.8965, -174.23, -172.5479, -170.8498, -169.1354, -167.4044, -165.6564, -163.8911, -162.108, -160.3069, -158.4873, -156.6487, -154.7907, -152.9129, -151.0148, -149.0958, -147.1555, -145.1932, -143.2084, -141.2005, -139.1687, -137.1125, -135.031, -132.9236, -130.7894, -128.6275, -126.4371, -124.2172, -121.9667, -119.6845, -117.3695, -115.0203, -112.6358, -110.2143, -107.7543, -105.2541, -102.712, -100.1258, -97.4934, -94.8125, -92.0804, -89.2943, -86.4509, -83.5468, -80.5779, -77.5398, -74.4275, -71.2353, -67.9566, -64.5839, -61.1081, -57.519, -53.8039, -49.9478, -45.9317, -41.7322, -37.3188, -32.6509, -27.6724, -22.3023, -16.4157, -9.8081, -2.1652, 4.8066], "z": [-15.3717, -17.2548, -19.0052, -20.6348, -22.1531, -23.568, -24.886, -26.1126, -27.2523, -28.3091, -29.1956, -30.1033, -30.9364, -31.6969, -32.3868, -33.0073, -33.5598, -34.0452, -34.4642, -34.8175, -35.1053, -35.328, -35.4842, -35.5705, -35.591, -35.545, -35.4319, -35.2507, -35.0001, -34.6787, -34.2848, -33.8165, -33.2712, -32.6463, -31.9386, -31.1444, -30.2593, -29.2782, -28.1952, -27.003, -25.693, -24.255, -22.6758, -20.9394, -19.025, -16.9053, -14.5428, -11.8843, -8.8503, -5.316, -1.1125, 2.9512, 3.1601, 0.6793, -2.4319, -5.363, -8.0972, -10.6658, -13.0972, -15.4132, -17.6308, -19.7628, -21.8196, -23.8096, -25.7396, -27.6151, -29.441, -31.2214, -32.9598, -34.6591, -36.3222, -37.9512, -39.5484, -41.1155, -42.6544, -44.1663, -45.6528, -47.1151, -48.5542, -49.9714, -51.3674, -52.7432, -54.0996, -55.4374, -56.7573, -58.0599, -59.3458, -60.6156, -61.8698, -63.109, -64.3337, -65.5441, -66.7409, -67.9243, -69.0948, -70.2528, -71.3984, -72.5322, -73.6543, -74.7651, -75.8648, -76.9537, -78.0321, -79.1002, -80.1583, -81.2064, -82.245, -83.2741, -84.294, -85.3048, -86.3068, -87.3, -88.2847, -89.2611, -90.2292, -91.1893, -92.1414, -93.0857, -94.0224, -94.9516, -95.8733, -96.7878, -97.6951, -98.5954, -99.4887, -100.3751, -101.2549, -102.128, -102.9946, -103.8547, -104.7085, -105.5561, -106.3974, -107.2327, -108.0619, -108.8852, -109.7027, -110.5144, -111.3204, -112.1207, -112.9155, -113.7048, -114.4886, -115.2671, -116.0403, -116.8082, -117.571, -118.3286, -119.0812, -119.8287, -120.5713, -121.309, -122.0418, -122.7699, -123.4931, -124.2117, -124.9256, -125.6349, -126.3397, -127.0399, -127.7356, -128.4269, -129.1138, -129.7964, -130.4746, -131.1486, -131.8183, -132.4838, -133.1452, -133.8025, -134.4556, -135.1047, -135.7498, -136.3909, -137.0281, -137.6613, -138.2907, -138.9162, -139.5378, -140.1557, -140.7698, -141.3802, -141.9868, -142.5898, -143.1891, -143.7848, -144.3769, -144.9654, -145.5504, -146.1319, -146.7098, -147.2843, -147.8554, -148.423, -148.9872, -149.548, -150.1055, -150.6597, -151.2105, -151.7581, -152.3024, -152.8434, -153.3812, -153.9158, -154.4472, -154.9755, -155.5006, -156.0226, -156.5415, -157.0573, -157.57, -158.0797, -158.5863, -159.0899, -159.5905, -160.0882, -160.5828, -161.0746, -161.5634, -162.0492, -162.5322, -163.0123, -163.4895, -163.9639, -164.4354, -164.9042, -165.3701, -165.8332, -166.2935, -166.7511, -167.2059, -167.658, -168.1074, -168.554, -168.998, -169.4392, -169.8778, -170.3138, -170.7471, -171.1777, -171.6058, -172.0312, -172.454, -172.8743, -173.2919, -173.707, -174.1195, -174.5295, -174.9369, -175.3418, -175.7441, -176.1439, -176.5413, -176.9361, -177.3284, -177.7181, -178.1054, -178.4902, -178.8725, -179.2522, -179.6295, -180.0042, -180.3763, -180.7459, -181.1129, -181.4774, -181.8391, -182.1982, -182.5545, -182.908, -183.2586, -183.6063, -183.9507, -184.2919, -184.6296, -184.9635, -185.2934, -185.6187, -185.939, -186.2534, -186.5611, -186.8608, -187.1507, -187.4284, -187.6906, -187.9326, -188.1483, -188.3294, -188.4662, -188.5491, -188.572, -188.5353, -188.4466, -188.3173, -188.1587, -187.9799, -187.7876, -187.586, -187.3782, -187.166, -186.9508, -186.7332, -186.5138, -186.2929, -186.0706, -185.8472, -185.6226, -185.3969, -185.17, -184.942, -184.7128, -184.4823, -184.2506, -184.0175, -183.783, -183.5472, -183.3098, -183.0709, -182.8304, -182.5883, -182.3446, -182.0991, -181.8519, -181.6029, -181.3521, -181.0994, -180.8448, -180.5883, -180.3299, -180.0694, -179.8069, -179.5423, -179.2756, -179.0069, -178.7359, -178.4628, -178.1875, -177.91, -177.6301, -177.348, -177.0636, -176.7769, -176.4878, -176.1963, -175.9024, -175.606, -175.3072, -175.006, -174.7022, -174.3959, -174.087, -173.7755, -173.4615, -173.1448, -172.8255, -172.5036, -172.1789, -171.8515, -171.5214, -171.1886, -170.8529, -170.5145, -170.1732, -169.8291, -169.4821, -169.1322, -168.7794, -168.4236, -168.0649, -167.7032, -167.3385, -166.9708, -166.6, -166.2261, -165.8491, -165.4689, -165.0856, -164.6991, -164.3094, -163.9165, -163.5203, -163.1208, -162.718, -162.3119, -161.9024, -161.4895, -161.0731, -160.6533, -160.2301, -159.8033, -159.373, -158.9391, -158.5016, -158.0604, -157.6156, -157.1671, -156.7149, -156.259, -155.7992, -155.3356, -154.8681, -154.3968, -153.9215, -153.4422, -152.959, -152.4717, -151.9803, -151.4848, -150.9851, -150.4813, -149.9732, -149.4608, -148.9441, -148.4231, -147.8976, -147.3677, -146.8333, -146.2944, -145.7508, -145.2027, -144.6498, -144.0922, -143.5298, -142.9626, -142.3904, -141.8134, -141.2313, -140.6442, -140.0519, -139.4545, -138.8518, -138.2438, -137.6305, -137.0117, -136.3874, -135.7576, -135.1221, -134.481, -133.834, -133.1812, -132.5225, -131.8577, -131.1869, -130.5099, -129.8266, -129.137, -128.4409, -127.7383, -127.0291, -126.3131, -125.5904, -124.8607, -124.1239, -123.3801, -122.6289, -121.8704, -121.1044, -120.3308, -119.5494, -118.7602, -117.9629, -117.1575, -116.3438, -115.5216, -114.6909, -113.8513, -113.0028, -112.1453, -111.2784, -110.402, -109.516, -108.6201, -107.7142, -106.7979, -105.8711, -104.9336, -103.9851, -103.0253, -102.0539, -101.0708, -100.0756, -99.068, -98.0476, -97.0142, -95.9674, -94.9068, -93.8321, -92.7428, -91.6384, -90.5186, -89.3829, -88.2307, -87.0615, -85.8748, -84.6699, -83.4461, -82.2029, -80.9394, -79.6549, -78.3485, -77.0193, -75.6664, -74.2886, -72.885, -71.4541, -69.9946, -68.5052, -66.9842, -65.4298, -63.84, -62.2128, -60.5456, -58.8359, -57.0806, -55.2763, -53.419, -51.5044, -49.5272, -47.4814, -45.3599, -43.1541, -40.8539, -38.4464, -35.9159, -33.2417, -30.397, -27.3447, -24.0318, -20.3777, -16.2489, -11.3961, -5.2705, 2.0389], "fpa": [57.4476, 57.1281, 56.5967, 55.8764, 54.9782, 53.9057, 52.6563, 51.223, 49.5949, 47.7577, 45.9034, 43.6189, 41.0697, 38.2339, 35.0908, 31.6229, 27.8189, 23.6778, 19.2131, 14.4566, 9.4605, 4.2974, -1.1321, -6.3133, -11.3821, -16.2574, -20.8753, -25.192, -29.1831, -32.8409, -36.1702, -39.1845, -41.902, -44.3436, -46.5304, -48.4823, -50.2176, -51.7515, -53.0967, -54.262, -55.2524, -56.0674, -56.7003, -57.1348, -57.3402, -57.262, -56.8013, -55.7679, -53.7525, -49.6871, -39.6626, -3.0786, 12.8806, 46.232, 55.7012, 60.3218, 63.1565, 65.1161, 66.5725, 67.7086, 68.626, 69.3862, 70.0288, 70.5807, 71.061, 71.4834, 71.8582, 72.1935, 72.4954, 72.7687, 73.0175, 73.2449, 73.4536, 73.6457, 73.8232, 73.9877, 74.1404, 74.2825, 74.4151, 74.5389, 74.6549, 74.7635, 74.8655, 74.9614, 75.0516, 75.1366, 75.2166, 75.2922, 75.3635, 75.4308, 75.4945, 75.5547, 75.6117, 75.6655, 75.7165, 75.7648, 75.8105, 75.8538, 75.8947, 75.9335, 75.9701, 76.0048, 76.0376, 76.0686, 76.0979, 76.1256, 76.1517, 76.1762, 76.1994, 76.2212, 76.2416, 76.2608, 76.2788, 76.2956, 76.3113, 76.3259, 76.3395, 76.352, 76.3636, 76.3743, 76.3841, 76.3929, 76.401, 76.4082, 76.4147, 76.4204, 76.4253, 76.4296, 76.4331, 76.436, 76.4383, 76.4399, 76.4409, 76.4413, 76.4412, 76.4405, 76.4393, 76.4375, 76.4353, 76.4325, 76.4293, 76.4257, 76.4215, 76.417, 76.412, 76.4067, 76.4009, 76.3948, 76.3883, 76.3814, 76.3742, 76.3667, 76.3589, 76.3507, 76.3423, 76.3336, 76.3246, 76.3153, 76.3058, 76.2961, 76.2861, 76.2759, 76.2655, 76.255, 76.2442, 76.2333, 76.2222, 76.2109, 76.1996, 76.1881, 76.1765, 76.1648, 76.153, 76.1411, 76.1292, 76.1173, 76.1053, 76.0933, 76.0813, 76.0693, 76.0573, 76.0454, 76.0335, 76.0217, 76.01, 75.9984, 75.9869, 75.9756, 75.9645, 75.9535, 75.9427, 75.9322, 75.9219, 75.9119, 75.9022, 75.8929, 75.8839, 75.8752, 75.867, 75.8592, 75.8519, 75.8451, 75.8388, 75.8331, 75.828, 75.8236, 75.8198, 75.8168, 75.8146, 75.8132, 75.8126, 75.813, 75.8144, 75.8169, 75.8204, 75.8251, 75.8311, 75.8383, 75.847, 75.8571, 75.8688, 75.8821, 75.8972, 75.9141, 75.9329, 75.9538, 75.9769, 76.0023, 76.0302, 76.0606, 76.0938, 76.1299, 76.1691, 76.2116, 76.2576, 76.3073, 76.361, 76.4188, 76.4811, 76.5481, 76.6202, 76.6977, 76.781, 76.8704, 76.9665, 77.0696, 77.1803, 77.2991, 77.4266, 77.5635, 77.7105, 77.8684, 78.0381, 78.2206, 78.4168, 78.628, 78.8556, 79.1008, 79.3655, 79.6513, 79.9604, 80.2951, 80.658, 81.052, 81.4805, 81.9474, 82.4571, 83.0147, 83.626, 84.2977, 85.0372, 85.8527, 86.7512, 87.7324, 88.739, 89.1187, 88.0152, 86.4165, 84.5211, 82.3079, 79.7164, 76.6599, 73.022, 68.6495, 63.3428, 56.8502, 48.8767, 39.1332, 27.4643, 14.0651, -0.3376, -14.6057, -27.6593, -38.8882, -48.1852, -55.7385, -61.8336, -66.7463, -70.7039, -73.8808, -76.4047, -78.3669, -79.8345, -80.8626, -81.5073, -81.8327, -81.9096, -81.8076, -81.5863, -81.2917, -80.9569, -80.6043, -80.2484, -79.8985, -79.5604, -79.2372, -78.9308, -78.6417, -78.3701, -78.1156, -77.8777, -77.6555, -77.4484, -77.2555, -77.0759, -76.9088, -76.7535, -76.6092, -76.4752, -76.3509, -76.2356, -76.1287, -76.0298, -75.9382, -75.8536, -75.7755, -75.7035, -75.6372, -75.5762, -75.5203, -75.469, -75.4223, -75.3796, -75.3409, -75.3059, -75.2743, -75.246, -75.2208, -75.1984, -75.1788, -75.1617, -75.1471, -75.1347, -75.1245, -75.1162, -75.1099, -75.1054, -75.1026, -75.1014, -75.1016, -75.1033, -75.1063, -75.1106, -75.1161, -75.1226, -75.1303, -75.1389, -75.1484, -75.1588, -75.17, -75.182, -75.1947, -75.2081, -75.2221, -75.2367, -75.2519, -75.2675, -75.2836, -75.3002, -75.3172, -75.3345, -75.3522, -75.3703, -75.3886, -75.4072, -75.426, -75.445, -75.4642, -75.4836, -75.5032, -75.5229, -75.5427, -75.5625, -75.5825, -75.6025, -75.6225, -75.6426, -75.6627, -75.6828, -75.7028, -75.7228, -75.7428, -75.7627, -75.7825, -75.8022, -75.8218, -75.8413, -75.8607, -75.88, -75.8991, -75.918, -75.9368, -75.9554, -75.9738, -75.992, -76.0099, -76.0277, -76.0452, -76.0625, -76.0796, -76.0964, -76.1129, -76.1291, -76.1451, -76.1607, -76.1761, -76.1911, -76.2058, -76.2202, -76.2342, -76.2479, -76.2612, -76.2741, -76.2867, -76.2989, -76.3106, -76.3219, -76.3329, -76.3433, -76.3534, -76.363, -76.3721, -76.3807, -76.3888, -76.3964, -76.4035, -76.4101, -76.4161, -76.4216, -76.4264, -76.4307, -76.4344, -76.4375, -76.4399, -76.4416, -76.4427, -76.4431, -76.4428, -76.4417, -76.4399, -76.4372, -76.4338, -76.4296, -76.4245, -76.4185, -76.4116, -76.4037, -76.3949, -76.385, -76.3742, -76.3622, -76.3491, -76.3349, -76.3194, -76.3027, -76.2847, -76.2653, -76.2446, -76.2223, -76.1985, -76.1732, -76.1461, -76.1173, -76.0867, -76.0541, -76.0196, -75.9829, -75.944, -75.9028, -75.859, -75.8127, -75.7637, -75.7117, -75.6566, -75.5982, -75.5363, -75.4707, -75.4011, -75.3273, -75.2489, -75.1655, -75.0769, -74.9826, -74.882, -74.7748, -74.6602, -74.5376, -74.4062, -74.2652, -74.1135, -73.9499, -73.7731, -73.5814, -73.3731, -73.1457, -72.8966, -72.6224, -72.3192, -71.9818, -71.6038, -71.177, -70.6905, -70.1298, -69.4747, -68.6965, -67.7523, -66.5748, -65.0509, -62.9719, -59.8981, -54.6862, -43.0333, -6.2488]}, "summary": {"duration_days": 8.851770833333333, "max_alt_km": 406776.61730456015, "apoapsis_epoch": "2026-04-06T23:07:38.660", "entry_speed": 10.998843529678863, "n_vectors": 3193, "n_anomalies": 96, "anomaly_time_h": 20.43, "landing_lat": 18.4, "landing_lon": -151.2, "landing_sigma": 42.0}};
+const T = D.traj, S = D.summary, N = T.t.length;
+const R_EARTH = 6.371; // Mm
+
+// ── THREE.JS ──────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({canvas:document.getElementById('three-canvas'),antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x06060f);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45,1,0.01,2000);
+camera.position.set(120,60,110);
+
+// Stars
+const sg=new THREE.BufferGeometry(),sp=new Float32Array(6000);
+for(let i=0;i<6000;i++) sp[i]=(Math.random()-.5)*1500;
+sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:60,sizeAttenuation:true,transparent:true,opacity:.5})));
+
+// Earth
+const earthM=new THREE.Mesh(new THREE.SphereGeometry(R_EARTH,32,32),new THREE.MeshPhongMaterial({color:0x1a4a8a,emissive:0x071a3a}));
+scene.add(earthM);
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(R_EARTH*1.03,32,32),new THREE.MeshPhongMaterial({color:0x2244aa,transparent:true,opacity:.12,side:THREE.BackSide})));
+scene.add(new THREE.AmbientLight(0x223355,.8));
+const sun=new THREE.DirectionalLight(0xffffff,1.4); sun.position.set(400,200,150); scene.add(sun);
+
+// Trajectory line
+function lerp3(t,c1,c2,c3){
+  if(t<.5){const s=t*2;return[c1[0]+(c2[0]-c1[0])*s,c1[1]+(c2[1]-c1[1])*s,c1[2]+(c2[2]-c1[2])*s];}
+  const s=(t-.5)*2;return[c2[0]+(c3[0]-c2[0])*s,c2[1]+(c3[1]-c2[1])*s,c2[2]+(c3[2]-c2[2])*s];
+}
+const pos3=new Float32Array(N*3),col3=new Float32Array(N*3);
+const c1=[0,.898,1],c2=[1,.239,.545],c3=[.961,.784,.259];
+for(let i=0;i<N;i++){
+  pos3[i*3]=T.x[i]; pos3[i*3+1]=T.z[i]; pos3[i*3+2]=-T.y[i];
+  const [r,g,b]=lerp3(i/(N-1),c1,c2,c3);
+  col3[i*3]=r;col3[i*3+1]=g;col3[i*3+2]=b;
+}
+const tg=new THREE.BufferGeometry();
+tg.setAttribute('position',new THREE.BufferAttribute(pos3,3));
+tg.setAttribute('color',new THREE.BufferAttribute(col3,3));
+scene.add(new THREE.Line(tg,new THREE.LineBasicMaterial({vertexColors:true})));
+
+// Markers
+function mksph(r,c){return new THREE.Mesh(new THREE.SphereGeometry(r,16,16),new THREE.MeshBasicMaterial({color:c}));}
+const startM=mksph(.6,0x00e5ff); startM.position.set(T.x[0],T.z[0],-T.y[0]); scene.add(startM);
+const endM=mksph(.7,0xff3d8b); endM.position.set(T.x[N-1],T.z[N-1],-T.y[N-1]); scene.add(endM);
+const apoI=T.dist.indexOf(Math.max(...T.dist));
+const apoM=mksph(.8,0xf5c842); apoM.position.set(T.x[apoI],T.z[apoI],-T.y[apoI]); scene.add(apoM);
+const curM=mksph(.65,0x00ffaa); scene.add(curM);
+
+// Anomaly markers (red dots at T+0.85 day ≈ T+20.4h)
+for(let i=0;i<N;i++){
+  if(T.anom[i]>.7){
+    const am=mksph(.4,0xff3d8b); am.position.set(T.x[i],T.z[i],-T.y[i]); scene.add(am);
+  }
+}
+
+// Orbit controls
+let drag=false,lx=0,ly=0,theta=.65,phi=.42,radius=180;
+const cv=document.getElementById('three-canvas');
+cv.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+cv.addEventListener('mousemove',e=>{if(!drag)return;theta-=(e.clientX-lx)*.007;phi-=(e.clientY-ly)*.007;phi=Math.max(.1,Math.min(Math.PI-.1,phi));lx=e.clientX;ly=e.clientY;});
+cv.addEventListener('mouseup',()=>drag=false);
+cv.addEventListener('wheel',e=>{radius=Math.max(15,Math.min(600,radius+e.deltaY*.08));},{ passive:true });
+cv.addEventListener('touchstart',e=>{lx=e.touches[0].clientX;ly=e.touches[0].clientY;},{passive:true});
+cv.addEventListener('touchmove',e=>{theta-=(e.touches[0].clientX-lx)*.007;phi-=(e.touches[0].clientY-ly)*.007;phi=Math.max(.1,Math.min(Math.PI-.1,phi));lx=e.touches[0].clientX;ly=e.touches[0].clientY;},{passive:true});
+
+function resize(){
+  const el=document.getElementById('3d-view');
+  const w=el.clientWidth,h=el.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+resize(); window.addEventListener('resize',resize);
+
+// ── Micro charts ──────────────────────────────────────────────────────────────
+function drawMicro(id,data,color,curI){
+  const c=document.getElementById(id); if(!c)return;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#06060f'; ctx.fillRect(0,0,W,H);
+  const mn=Math.min(...data),mx=Math.max(...data),rng=mx-mn||1;
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,color+'66'); g.addColorStop(1,color+'00');
+  ctx.beginPath(); ctx.moveTo(0,H);
+  data.forEach((v,i)=>{const x=i/(data.length-1)*W,y=H-(v-mn)/rng*H*.85-2; i?ctx.lineTo(x,y):ctx.lineTo(x,y);});
+  ctx.lineTo(W,H); ctx.closePath(); ctx.fillStyle=g; ctx.fill();
+  ctx.beginPath();
+  data.forEach((v,i)=>{const x=i/(data.length-1)*W,y=H-(v-mn)/rng*H*.85-2; i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.strokeStyle=color; ctx.lineWidth=1.2; ctx.stroke();
+  if(curI>=0){const cx=curI/(data.length-1)*W; ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,H);ctx.strokeStyle='#ffffff44';ctx.lineWidth=1;ctx.stroke();}
+}
+
+function drawBigChart(id,data,label,color){
+  const c=document.getElementById(id); if(!c)return;
+  const ctx=c.getContext('2d');
+  c.width=c.parentElement.clientWidth-24; // responsive
+  const W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0b0b1a'; ctx.fillRect(0,0,W,H);
+  const mn=Math.min(...data),mx=Math.max(...data),rng=mx-mn||1;
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,color+'55'); g.addColorStop(1,color+'00');
+  ctx.beginPath(); ctx.moveTo(0,H);
+  data.forEach((v,i)=>{const x=i/(data.length-1)*(W-20)+10,y=H-20-(v-mn)/rng*(H-30); i?ctx.lineTo(x,y):ctx.lineTo(x,y);});
+  ctx.lineTo(W-10,H); ctx.closePath(); ctx.fillStyle=g; ctx.fill();
+  ctx.beginPath();
+  data.forEach((v,i)=>{const x=i/(data.length-1)*(W-20)+10,y=H-20-(v-mn)/rng*(H-30); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
+  // Axis labels
+  ctx.fillStyle='#5a5a8a'; ctx.font='10px Space Mono'; ctx.textAlign='left';
+  ctx.fillText(mn.toFixed(1),6,H-4);
+  ctx.textAlign='right';
+  ctx.fillText(mx.toFixed(1),W-4,14);
+  // x axis ticks
+  [0,.25,.5,.75,1].forEach(f=>{
+    const x=f*(W-20)+10;
+    ctx.fillStyle='#5a5a8a'; ctx.textAlign='center'; ctx.font='9px Space Mono';
+    ctx.fillText((f*S.duration_days).toFixed(1)+'d',x,H-4);
+  });
+  // Anomaly highlight
+  const anomI = T.anom.indexOf(Math.max(...T.anom));
+  if(anomI>=0){
+    const ax=anomI/(N-1)*(W-20)+10;
+    ctx.strokeStyle='#ff3d8b55'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(ax,0); ctx.lineTo(ax,H); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#ff3d8b'; ctx.font='9px Space Mono'; ctx.textAlign='center';
+    ctx.fillText('OTC-1',ax,12);
+  }
+}
+
+function drawLandingMap(){
+  const c=document.getElementById('land-canvas'); if(!c)return;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#06060f'; ctx.fillRect(0,0,W,H);
+  // Grid
+  ctx.strokeStyle='#1a1a35'; ctx.lineWidth=.5;
+  for(let lo=-180;lo<=180;lo+=60){const x=(lo+180)/360*W; ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let la=-90;la<=90;la+=45){const y=(90-la)/180*H; ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  // Equator
+  ctx.strokeStyle='#2a2a5a'; ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+  // Pacific zone
+  const zx1=(360-160)/360*W-W, zx2=(360-120)/360*W-W;
+  const zy1=(90-10)/180*H, zy2=(90+10)/180*H;
+  ctx.fillStyle='#1a3a5a33'; ctx.strokeStyle='#1a5fb466';
+  ctx.fillRect(W+zx1,zy1,zx2-zx1,zy2-zy1);
+  // Landing ellipse
+  const plat=S.landing_lat, plon=S.landing_lon;
+  const px=(plon+180)/360*W, py=(90-plat)/180*H;
+  ctx.beginPath(); ctx.ellipse(px,py,14,10,0,0,Math.PI*2);
+  ctx.fillStyle='#00ffaa22'; ctx.strokeStyle='#00ffaa'; ctx.lineWidth=1.5;
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px,py,3,0,Math.PI*2);
+  ctx.fillStyle='#00ffaa'; ctx.fill();
+  // Label
+  ctx.fillStyle='#00ffaa'; ctx.font='8px Space Mono'; ctx.textAlign='left';
+  ctx.fillText(`${plat.toFixed(1)}N`,px+5,py-2);
+  ctx.fillText(`${Math.abs(plon).toFixed(1)}W`,px+5,py+8);
+}
+
+// ── View switching ────────────────────────────────────────────────────────────
+function switchView(v, btn){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(v+'-view').classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(v==='charts') setTimeout(drawAllCharts,50);
+  resize();
+}
+
+function drawAllCharts(){
+  drawBigChart('c-dist',  T.dist,  'Distance (km)', '#00e5ff');
+  drawBigChart('c-spd',   T.speed, 'Speed (km/s)',  '#ff3d8b');
+  drawBigChart('c-anom',  T.anom,  'Anomaly Score', '#f5c842');
+  drawBigChart('c-sr',    T.sr,    'Speed Residual','#9b7fff');
+  drawBigChart('c-energy',T.energy,'Energy (km²/s²)','#ff9f00');
+  drawBigChart('c-ecc',   T.ecc,   'Eccentricity',  '#00ffaa');
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+let curI=0, playing=false, lastT=0;
+function seek(i){ curI=Math.min(N-1,Math.max(0,i)); updateState(); }
+function togglePlay(){
+  playing=!playing;
+  document.getElementById('play-btn').textContent=playing?'⏸ PAUSE':'▶ PLAY';
+}
+
+const PHASES=[
+  [0,    0.5,  'TRANS-LUNAR COAST',    '#1a3050','#00e5ff'],
+  [0.5,  3.0,  'OUTBOUND COAST',       '#1a2a1a','#00ffaa'],
+  [3.0,  5.5,  'LUNAR APPROACH',       '#2a2a00','#f5c842'],
+  [5.5,  6.0,  'LUNAR FLYBY',          '#3a2000','#f5c842'],
+  [6.0,  8.5,  'RETURN COAST',         '#1a003a','#ff3d8b'],
+  [8.5,  99,   'ENTRY INTERFACE',      '#3a0000','#ff4444'],
+];
+
+function updateState(){
+  const i=curI, d=T.t[i];
+  document.getElementById('scrubber').value=i;
+  document.getElementById('scr-time').textContent=`Day ${d.toFixed(2)}`;
+  document.getElementById('h-day').textContent=d.toFixed(3);
+  document.getElementById('h-dist').textContent=(T.dist[i]/1000).toFixed(1)+' Mm';
+  document.getElementById('h-spd').textContent=T.speed[i].toFixed(3);
+  document.getElementById('p-met').textContent=`${d.toFixed(3)} days`;
+  document.getElementById('p-dist').textContent=`${(T.dist[i]/1000).toFixed(1)} Mm`;
+  document.getElementById('p-spd').textContent=`${T.speed[i].toFixed(4)} km/s`;
+  document.getElementById('p-e').textContent=T.energy[i].toFixed(4);
+  document.getElementById('p-ecc').textContent=T.ecc[i].toFixed(5);
+  document.getElementById('p-fpa').textContent=T.fpa[i].toFixed(2)+'°';
+
+  // Phase
+  const ph=PHASES.find(p=>d>=p[0]&&d<p[1])||PHASES[0];
+  const b=document.getElementById('phase-badge');
+  b.textContent=ph[2]; b.style.background=ph[3]; b.style.color=ph[4];
+
+  // 3D marker
+  curM.position.set(T.x[i],T.z[i],-T.y[i]);
+
+  // Micro charts
+  document.getElementById('mc-anom-val').textContent=T.anom[i].toFixed(3);
+  document.getElementById('mc-jerk-val').textContent=T.jerk[i].toFixed(2);
+  drawMicro('mc-anom',T.anom,'#f5c842',i);
+  drawMicro('mc-jerk',T.jerk,'#ff3d8b',i);
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+function render(now){
+  requestAnimationFrame(render);
+  if(playing && now-lastT>30){
+    curI=(curI+1)%N; updateState(); lastT=now;
+  }
+  const cx=radius*Math.sin(phi)*Math.cos(theta);
+  const cy=radius*Math.cos(phi);
+  const cz=radius*Math.sin(phi)*Math.sin(theta);
+  camera.position.set(cx,cy,cz); camera.lookAt(0,0,0);
+  renderer.render(scene,camera);
+}
+
+// Init
+updateState();
+drawLandingMap();
+drawMicro('mc-anom',T.anom,'#f5c842',0);
+drawMicro('mc-jerk',T.jerk,'#ff3d8b',0);
+render(0);
+</script>
+</body>
+</html>

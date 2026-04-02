@@ -206,7 +206,7 @@ fn convert_horizons_to_oem(horizons: &str, body_id: &str) -> Result<String> {
 
         // Calendar date is like "A.D. 2026-Apr-02 03:26:56.0000"
         // Find the date/time part
-        let epoch_str = parse_horizons_epoch(parts)?;
+        let epoch_str = parse_horizons_epoch(&parts)?;
         let x  = parts[parts.len()-6].parse::<f64>().unwrap_or(0.0);
         let y  = parts[parts.len()-5].parse::<f64>().unwrap_or(0.0);
         let z  = parts[parts.len()-4].parse::<f64>().unwrap_or(0.0);
