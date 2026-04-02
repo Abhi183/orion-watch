@@ -10,6 +10,8 @@ on:
       - "crates/**"
       - "python/**"
       - ".github/workflows/**"
+      - "requirements.txt"
+      - "README.md"
   workflow_dispatch:
     inputs:
       source:
@@ -26,6 +28,9 @@ concurrency:
   group: orion-watch-pipeline
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   pipeline:
     name: Fetch → Rust Engine → ML → Viz → Commit
@@ -36,15 +41,16 @@ jobs:
     steps:
       # ── Setup ──────────────────────────────────────────────────────────────
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: requirements.txt
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -62,9 +68,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install \
-            numpy pandas scikit-learn matplotlib \
-            torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       # ── Rust ─────────────────────────────────────────────────────────────────
       - name: Run Rust tests
@@ -91,7 +95,7 @@ jobs:
           ./target/release/oem-engine \
             --input data/latest.oem \
             --features-out data/features.csv \
-            --summary-out outputs/summary.json | tee outputs/engine_stdout.json
+            --summary-out data/features_summary.json | tee outputs/engine_stdout.json
 
       # ── ML + Viz ──────────────────────────────────────────────────────────
       - name: Run ML Pipeline
@@ -138,7 +142,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add outputs/ data/latest.oem data/features.csv || true
+          git add outputs/ data/latest.oem data/features.csv data/features_summary.json || true
           git diff --staged --quiet || \
             git commit -m "auto: Orion update $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push || echo "Nothing to push"
@@ -148,7 +152,7 @@ jobs:
     name: Lint (Rust + Python)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -156,8 +160,12 @@ jobs:
         run: cargo fmt --check --all
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
-      - run: pip install ruff
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+      - name: install lint deps
+        run: pip install -r requirements.txt
       - name: ruff lint
         run: ruff check python/

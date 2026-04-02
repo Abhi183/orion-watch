@@ -30,21 +30,39 @@ const HORIZONS_API: &str = "https://ssd.jpl.nasa.gov/api/horizons.api";
 async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let mut out_path       = "data/latest.oem".to_string();
-    let mut source         = "auto".to_string();
-    let mut horizons_id    = "-170".to_string();  // Artemis II Orion
-    let mut start_time     = String::new();
-    let mut stop_time      = String::new();
+    let mut out_path = "data/latest.oem".to_string();
+    let mut source = "auto".to_string();
+    let mut horizons_id = "-170".to_string(); // Artemis II Orion
+    let mut start_time = String::new();
+    let mut stop_time = String::new();
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--out"          => { i += 1; out_path    = args[i].clone(); }
-            "--source"       => { i += 1; source      = args[i].clone(); }
-            "--horizons-id"  => { i += 1; horizons_id = args[i].clone(); }
-            "--start"        => { i += 1; start_time  = args[i].clone(); }
-            "--stop"         => { i += 1; stop_time   = args[i].clone(); }
-            "--help" | "-h"  => { print_help(); return Ok(()); }
+            "--out" => {
+                i += 1;
+                out_path = args[i].clone();
+            }
+            "--source" => {
+                i += 1;
+                source = args[i].clone();
+            }
+            "--horizons-id" => {
+                i += 1;
+                horizons_id = args[i].clone();
+            }
+            "--start" => {
+                i += 1;
+                start_time = args[i].clone();
+            }
+            "--stop" => {
+                i += 1;
+                stop_time = args[i].clone();
+            }
+            "--help" | "-h" => {
+                print_help();
+                return Ok(());
+            }
             _ => {}
         }
         i += 1;
@@ -71,9 +89,9 @@ async fn main() -> Result<()> {
         .build()?;
 
     let content = match source.as_str() {
-        "arow"     => fetch_arow(&client).await?,
+        "arow" => fetch_arow(&client).await?,
         "horizons" => fetch_horizons(&client, &horizons_id, &start_time, &stop_time).await?,
-        "auto" | _ => {
+        _ => {
             eprintln!("[fetcher] Trying NASA AROW first...");
             match fetch_arow(&client).await {
                 Ok(c) => {
@@ -115,9 +133,12 @@ async fn fetch_arow(client: &Client) -> Result<String> {
                 if body.contains("<pre>") && body.contains("OBJECT_NAME") {
                     return Ok(body);
                 }
-                eprintln!("[fetcher] Response from {} didn't look like OEM, trying next", url);
+                eprintln!(
+                    "[fetcher] Response from {} didn't look like OEM, trying next",
+                    url
+                );
             }
-            Ok(r)  => eprintln!("[fetcher] HTTP {} from {}", r.status(), url),
+            Ok(r) => eprintln!("[fetcher] HTTP {} from {}", r.status(), url),
             Err(e) => eprintln!("[fetcher] Error from {}: {}", url, e),
         }
     }
@@ -133,7 +154,9 @@ fn extract_oem_from_zip(bytes: Vec<u8>) -> Result<String> {
         if file.name().ends_with(".txt") || file.name().ends_with(".asc") {
             let mut content = String::new();
             file.read_to_string(&mut content)?;
-            if content.contains("OBJECT_NAME") { return Ok(content); }
+            if content.contains("OBJECT_NAME") {
+                return Ok(content);
+            }
         }
     }
     Err(anyhow!("No OEM file found in zip"))
@@ -142,34 +165,34 @@ fn extract_oem_from_zip(bytes: Vec<u8>) -> Result<String> {
 // ── HORIZONS fetcher ──────────────────────────────────────────────────────────
 // Queries the JPL HORIZONS REST API for vector ephemeris (OEM-compatible output).
 async fn fetch_horizons(
-    client:    &Client,
-    body_id:   &str,
+    client: &Client,
+    body_id: &str,
     start_time: &str,
-    stop_time:  &str,
+    stop_time: &str,
 ) -> Result<String> {
-    eprintln!("[fetcher] Querying JPL HORIZONS for body {} ({} → {})",
-              body_id, start_time, stop_time);
+    eprintln!(
+        "[fetcher] Querying JPL HORIZONS for body {} ({} → {})",
+        body_id, start_time, stop_time
+    );
 
     let params = [
-        ("format",     "text"),
-        ("COMMAND",    body_id),
-        ("OBJ_DATA",   "NO"),
+        ("format", "text"),
+        ("COMMAND", body_id),
+        ("OBJ_DATA", "NO"),
         ("MAKE_EPHEM", "YES"),
         ("EPHEM_TYPE", "VECTORS"),
-        ("CENTER",     "500@399"),       // geocentric (Earth center)
-        ("REF_FRAME",  "ICRF"),          // J2000 ≈ EME2000
+        ("CENTER", "500@399"), // geocentric (Earth center)
+        ("REF_FRAME", "ICRF"), // J2000 ≈ EME2000
         ("START_TIME", start_time),
-        ("STOP_TIME",  stop_time),
-        ("STEP_SIZE",  "4m"),            // match FDO cadence
-        ("VEC_TABLE",  "2"),             // X,Y,Z, VX,VY,VZ
-        ("VEC_CORR",   "NONE"),
-        ("OUT_UNITS",  "KM-S"),
+        ("STOP_TIME", stop_time),
+        ("STEP_SIZE", "4m"), // match FDO cadence
+        ("VEC_TABLE", "2"),  // X,Y,Z, VX,VY,VZ
+        ("VEC_CORR", "NONE"),
+        ("OUT_UNITS", "KM-S"),
         ("CSV_FORMAT", "NO"),
     ];
 
-    let resp = client.get(HORIZONS_API)
-        .query(&params)
-        .send().await?;
+    let resp = client.get(HORIZONS_API).query(&params).send().await?;
 
     if !resp.status().is_success() {
         return Err(anyhow!("HORIZONS HTTP {}", resp.status()));
@@ -196,23 +219,32 @@ fn convert_horizons_to_oem(horizons: &str, body_id: &str) -> Result<String> {
     let mut in_data = false;
     for line in horizons.lines() {
         let line = line.trim();
-        if line.starts_with("$$SOE") { in_data = true; continue; }
-        if line.starts_with("$$EOE") { break; }
-        if !in_data { continue; }
+        if line.starts_with("$$SOE") {
+            in_data = true;
+            continue;
+        }
+        if line.starts_with("$$EOE") {
+            break;
+        }
+        if !in_data {
+            continue;
+        }
 
         // Format: "JDTDB  Cal_Date  X  Y  Z  VX  VY  VZ  ..."
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 9 { continue; }
+        if parts.len() < 9 {
+            continue;
+        }
 
         // Calendar date is like "A.D. 2026-Apr-02 03:26:56.0000"
         // Find the date/time part
-        let epoch_str = parse_horizons_epoch(parts)?;
-        let x  = parts[parts.len()-6].parse::<f64>().unwrap_or(0.0);
-        let y  = parts[parts.len()-5].parse::<f64>().unwrap_or(0.0);
-        let z  = parts[parts.len()-4].parse::<f64>().unwrap_or(0.0);
-        let vx = parts[parts.len()-3].parse::<f64>().unwrap_or(0.0);
-        let vy = parts[parts.len()-2].parse::<f64>().unwrap_or(0.0);
-        let vz = parts[parts.len()-1].parse::<f64>().unwrap_or(0.0);
+        let epoch_str = parse_horizons_epoch(&parts)?;
+        let x = parts[parts.len() - 6].parse::<f64>().unwrap_or(0.0);
+        let y = parts[parts.len() - 5].parse::<f64>().unwrap_or(0.0);
+        let z = parts[parts.len() - 4].parse::<f64>().unwrap_or(0.0);
+        let vx = parts[parts.len() - 3].parse::<f64>().unwrap_or(0.0);
+        let vy = parts[parts.len() - 2].parse::<f64>().unwrap_or(0.0);
+        let vz = parts[parts.len() - 1].parse::<f64>().unwrap_or(0.0);
 
         lines.push(format!(
             "{} {:.15E} {:.15E} {:.15E} {:.15E} {:.15E} {:.15E}",
@@ -231,9 +263,9 @@ fn convert_horizons_to_oem(horizons: &str, body_id: &str) -> Result<String> {
 fn parse_horizons_epoch(parts: &[&str]) -> Result<String> {
     // Parts contain: JD, "A.D.", "YYYY-Mon-DD", "HH:MM:SS.ffff", ...
     for (i, p) in parts.iter().enumerate() {
-        if *p == "A.D." && i+2 < parts.len() {
-            let date_str = parts[i+1];
-            let time_str = parts[i+2].trim_end_matches('0').trim_end_matches('.');
+        if *p == "A.D." && i + 2 < parts.len() {
+            let date_str = parts[i + 1];
+            let time_str = parts[i + 2].trim_end_matches('0').trim_end_matches('.');
             // "2026-Apr-02" → "2026-04-02"
             let date_iso = chrono_month(date_str)?;
             return Ok(format!("{}T{}", date_iso, time_str));
@@ -244,18 +276,30 @@ fn parse_horizons_epoch(parts: &[&str]) -> Result<String> {
 
 fn chrono_month(s: &str) -> Result<String> {
     let parts: Vec<&str> = s.split('-').collect();
-    if parts.len() != 3 { return Err(anyhow!("bad date {}", s)); }
+    if parts.len() != 3 {
+        return Err(anyhow!("bad date {}", s));
+    }
     let mon = match parts[1] {
-        "Jan" => "01", "Feb" => "02", "Mar" => "03", "Apr" => "04",
-        "May" => "05", "Jun" => "06", "Jul" => "07", "Aug" => "08",
-        "Sep" => "09", "Oct" => "10", "Nov" => "11", "Dec" => "12",
+        "Jan" => "01",
+        "Feb" => "02",
+        "Mar" => "03",
+        "Apr" => "04",
+        "May" => "05",
+        "Jun" => "06",
+        "Jul" => "07",
+        "Aug" => "08",
+        "Sep" => "09",
+        "Oct" => "10",
+        "Nov" => "11",
+        "Dec" => "12",
         other => return Err(anyhow!("unknown month {}", other)),
     };
     Ok(format!("{}-{}-{}", parts[0], mon, parts[2]))
 }
 
 fn print_help() {
-    eprintln!(r#"
+    eprintln!(
+        r#"
 oem-fetch — NASA AROW + JPL HORIZONS OEM fetcher
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 USAGE:
@@ -271,5 +315,6 @@ OPTIONS:
 NOTES:
     auto mode tries AROW first, falls back to HORIZONS on failure.
     HORIZONS body IDs: Artemis I Orion = -166, Artemis II = -170 (verify at ssd.jpl.nasa.gov)
-"#);
+"#
+    );
 }
