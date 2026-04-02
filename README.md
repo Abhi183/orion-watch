@@ -2,7 +2,7 @@
 
 **Real NASA flight data · Rust physics engine · Python ML pipeline · GitHub Actions auto-deploy**
 
-[![pipeline](https://github.com/YOUR_USERNAME/orion-watch/actions/workflows/watch.yml/badge.svg)](https://github.com/YOUR_USERNAME/orion-watch/actions)
+[![pipeline](https://github.com/abhi183/orion-watch/actions/workflows/watch.yml/badge.svg)](https://github.com/abhi183/orion-watch/actions)
 
 ---
 
