@@ -259,7 +259,7 @@ class LSTMForecaster:
             return pd.DataFrame()
 
         from sklearn.preprocessing import StandardScaler
-        data  = df[self.STATE_FEATURES].fillna(method="ffill").values.astype(np.float32)
+        data  = df[self.STATE_FEATURES].ffill().values.astype(np.float32)
         data_s = self._scaler.transform(data)
 
         if start_idx < 0:
@@ -278,7 +278,7 @@ class LSTMForecaster:
         if not self._trained or self._model is None:
             return pd.DataFrame()
 
-        data  = df[self.STATE_FEATURES].fillna(method="ffill").values.astype(np.float32)
+        data  = df[self.STATE_FEATURES].ffill().values.astype(np.float32)
         data_s = self._scaler.transform(data)
         n     = len(data_s)
 
