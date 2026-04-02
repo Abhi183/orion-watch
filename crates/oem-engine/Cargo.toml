@@ -1,0 +1,21 @@
+[package]
+name    = "oem-engine"
+version = "0.1.0"
+edition = "2021"
+description = "CCSDS OEM parser + orbital mechanics feature engine for Artemis II"
+
+[[bin]]
+name = "oem-engine"
+path = "src/main.rs"
+
+[lib]
+name = "oem_engine"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow     = { workspace = true }
+chrono     = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+csv        = { workspace = true }
+regex      = "1"
