@@ -198,7 +198,7 @@ class LSTMForecaster:
     def _prepare(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """Build (X, y) sliding-window arrays."""
         from sklearn.preprocessing import StandardScaler
-        data = df[self.STATE_FEATURES].fillna(method="ffill").values.astype(np.float32)
+        data = df[self.STATE_FEATURES].ffill().values.astype(np.float32)
 
         if self._scaler is None:
             self._scaler = StandardScaler()
